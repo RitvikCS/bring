@@ -1,0 +1,50 @@
+{
+	"name": "@ritvikcs/bring",
+	"version": "0.0.0",
+	"description": "Friendly terminal UI and command layer on top of the Dev Containers CLI",
+	"type": "module",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/RitvikCS/bring.git"
+	},
+	"homepage": "https://github.com/RitvikCS/bring#readme",
+	"bugs": "https://github.com/RitvikCS/bring/issues",
+	"keywords": [
+		"devcontainer",
+		"devcontainers",
+		"docker",
+		"tui",
+		"cli",
+		"ink"
+	],
+	"bin": {
+		"bring": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"dependencies": {
+		"ink": "^7.1.0",
+		"react": "^19.2.7"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.3",
+		"@types/node": "^26.1.1",
+		"@types/react": "^19.2.17",
+		"ink-testing-library": "^4.0.0",
+		"typescript": "^7.0.2",
+		"vitest": "^4.1.10"
+	}
+}
