@@ -1,6 +1,7 @@
 // The down/remove translation table is a product requirement (spec §3):
-// users coming from the upstream CLI must see that Bring's `down` maps to
-// upstream `stop`, and Bring's `remove` maps to upstream `down`.
+// the destructive action must be unmistakable before anyone runs it. The
+// upstream CLI has no stop/down commands, so the table speaks in docker
+// terms — which is also literally how Bring implements both actions.
 export function helpText(version: string): string {
 	return `bring ${version} — Dev Containers without the ceremony
 
@@ -22,14 +23,18 @@ Actions
   remove                       Stop and DELETE devcontainer resources
                                (source files are never touched)
 
-Note for devcontainer CLI users
-  bring down    runs  devcontainer stop   (preserve)
-  bring remove  runs  devcontainer down   (delete)
+Note on down vs remove
+  bring down    acts like  docker stop   (containers kept, restart is fast)
+  bring remove  acts like  docker rm     (containers deleted)
+
+Global commands
+  doctor                       Check Node, the devcontainer CLI, and Docker;
+                               explain what is missing (--json for scripts)
 
 Options
   --help, -h                   Show this help
   --version, -v                Show the Bring version
 
-Most commands above land in the next release; this build routes
---help and --version only. Follow along: https://github.com/RitvikCS/bring`;
+Workspace commands above land in the next release; this build routes
+--help, --version, and doctor. Follow along: https://github.com/RitvikCS/bring`;
 }

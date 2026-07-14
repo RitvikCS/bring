@@ -14,6 +14,18 @@ describe('parseArgv', () => {
 		[['-x'], { kind: 'unknown-option', option: '-x' }],
 		// Unknown flags are rejected even next to future-valid tokens.
 		[['up', '--force'], { kind: 'unknown-option', option: '--force' }],
+		[['doctor'], { kind: 'doctor', json: false }],
+		[['doctor', '--json'], { kind: 'doctor', json: true }],
+		[['doctor', '--wat'], { kind: 'unknown-option', option: '--wat' }],
+		// Help still wins inside a doctor invocation.
+		[['doctor', '--help'], { kind: 'help' }],
+		[
+			['doctor', 'extra'],
+			{
+				kind: 'usage-error',
+				message: '`bring doctor` takes no arguments (got `extra`).',
+			},
+		],
 		[['up'], { kind: 'not-implemented', input: 'up' }],
 		[['this', 'up'], { kind: 'not-implemented', input: 'this up' }],
 		[['.', 'down'], { kind: 'not-implemented', input: '. down' }],

@@ -8,11 +8,16 @@ describe('helpText', () => {
 		expect(text).toContain('bring 9.9.9');
 	});
 
+	// Spec §3 as amended: the upstream CLI has no stop/down commands, so the
+	// required translation table speaks in docker terms instead.
 	it('documents the down/remove semantic translation (spec §3)', () => {
-		expect(text).toContain('devcontainer stop');
-		expect(text).toContain('devcontainer down');
-		expect(text).toMatch(/bring down\s+runs\s+devcontainer stop/);
-		expect(text).toMatch(/bring remove\s+runs\s+devcontainer down/);
+		expect(text).toMatch(/bring down\s+acts like\s+docker stop/);
+		expect(text).toMatch(/bring remove\s+acts like\s+docker rm/);
+	});
+
+	it('documents the doctor command', () => {
+		expect(text).toContain('doctor');
+		expect(text).toContain('--json');
 	});
 
 	it('warns that remove deletes while down preserves', () => {

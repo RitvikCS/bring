@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { render } from 'ink';
+import { runDoctor } from './application/doctor.js';
 import { EXIT } from './cli/exit-codes.js';
 import { helpText } from './cli/help.js';
 import { parseArgv } from './cli/parse-argv.js';
+import { renderDoctorHuman, renderDoctorJson } from './cli/render-doctor.js';
 import { getVersion } from './cli/version.js';
 import { App } from './tui/App.js';
 
@@ -23,6 +25,18 @@ async function main(): Promise<number> {
 			instance.unmount();
 			await instance.waitUntilExit();
 			return EXIT.success;
+		}
+		case 'doctor': {
+			const report = await runDoctor();
+			console.log(
+				route.json ? renderDoctorJson(report) : renderDoctorHuman(report),
+			);
+			return report.healthy ? EXIT.success : EXIT.dependency;
+		}
+		case 'usage-error': {
+			console.error(route.message);
+			console.error('Run `bring --help` for usage.');
+			return EXIT.usage;
 		}
 		case 'unknown-option': {
 			console.error(`Unknown option: ${route.option}`);

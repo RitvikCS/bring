@@ -13,9 +13,9 @@ bring . shell    # open a shell inside it
 bring . remove   # stop and delete devcontainer resources (never source files)
 ```
 
-> **Status: early development.** The CLI skeleton installs and runs
-> (`--version`, `--help`), but lifecycle commands and the TUI are still being
-> built. Not yet published to npm.
+> **Status: early development.** The CLI installs and runs (`--version`,
+> `--help`, `bring doctor`), but lifecycle commands and the TUI are still
+> being built. Not yet published to npm.
 
 ## Why
 
@@ -25,12 +25,16 @@ question is "which project do I want to work on?", not "which container ID do
 I want to manipulate?". It never installs anything on your machine, never
 deletes source files, and spawns every command without a shell.
 
-One deliberate difference from the upstream CLI:
+The naming that matters most:
 
-| Bring command  | Meaning         | Underlying operation |
-| -------------- | --------------- | -------------------- |
-| `bring down`   | stop, preserve  | `devcontainer stop`  |
-| `bring remove` | stop and delete | `devcontainer down`  |
+| Bring command  | Meaning         | Acts like     |
+| -------------- | --------------- | ------------- |
+| `bring down`   | stop, preserve  | `docker stop` |
+| `bring remove` | stop and delete | `docker rm`   |
+
+(The upstream `devcontainer` CLI has no lifecycle stop/remove commands at
+all — Bring finds a workspace's containers through devcontainer labels and
+manages them via Docker.)
 
 ## Requirements
 
