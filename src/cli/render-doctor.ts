@@ -6,19 +6,50 @@ const MARKS: Record<DoctorCheck['status'], string> = {
 	skipped: '-',
 };
 
+const ANSI = {
+	green: '\u001b[32m',
+	red: '\u001b[31m',
+	dim: '\u001b[2m',
+	reset: '\u001b[0m',
+} as const;
+
+export interface RenderOptions {
+	/**
+	 * Callers must only enable this for an interactive terminal: stdout is a
+	 * TTY, NO_COLOR is unset, and the user did not ask for --json (spec §18).
+	 */
+	color?: boolean;
+}
+
 /**
  * Human doctor output (P1-05, examples in spec §5.6): the aligned check list,
- * then a guidance block per failure. Plain text, no ANSI — doctor output gets
- * pasted into issues and chat, where escape codes turn to noise.
+ * then a guidance block per failure. Defaults to plain text — doctor output
+ * gets pasted into issues and chat, where escape codes turn to noise.
  */
-export function renderDoctorHuman(report: DoctorReport): string {
+export function renderDoctorHuman(
+	report: DoctorReport,
+	options: RenderOptions = {},
+): string {
+	const paint = options.color
+		? (code: keyof typeof ANSI, text: string) =>
+				`${ANSI[code]}${text}${ANSI.reset}`
+		: (_code: keyof typeof ANSI, text: string) => text;
+
 	const labelWidth = Math.max(...report.checks.map((c) => c.label.length));
-	const lines = report.checks.map(
-		(c) => `${MARKS[c.status]} ${c.label.padEnd(labelWidth)}  ${c.detail}`,
-	);
+	const lines = report.checks.map((c) => {
+		const line = `${MARKS[c.status]} ${c.label.padEnd(labelWidth)}  ${c.detail}`;
+		switch (c.status) {
+			case 'ok':
+				return `${paint('green', MARKS.ok)}${line.slice(MARKS.ok.length)}`;
+			case 'failed':
+				return `${paint('red', MARKS.failed)}${line.slice(MARKS.failed.length)}`;
+			case 'skipped':
+				return paint('dim', line);
+		}
+	});
 
 	if (report.healthy) {
-		return `${lines.join('\n')}\n\nReady.`;
+		return `${lines.join('\n')}\n\n${paint('green', 'Ready.')}`;
 	}
 
 	const guidance = report.checks

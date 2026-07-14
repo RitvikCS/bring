@@ -62,6 +62,24 @@ describe('renderDoctorHuman', () => {
 		expect(output).toContain('✓ Dev Containers CLI  0.87.0');
 	});
 
+	it('is plain text by default — no ANSI escapes', () => {
+		expect(renderDoctorHuman(HEALTHY)).not.toContain('\u001b');
+		expect(renderDoctorHuman(MISSING_CLI)).not.toContain('\u001b');
+	});
+
+	it('colors marks when color is enabled', () => {
+		const output = renderDoctorHuman(MISSING_CLI, { color: true });
+		expect(output).toContain('\u001b[32m✓\u001b[0m Node.js');
+		expect(output).toContain('\u001b[31m✗\u001b[0m Dev Containers CLI');
+		// The whole skipped line is dimmed.
+		expect(output).toMatch(/\u001b\[2m- CLI capabilities.*\u001b\[0m/);
+	});
+
+	it('colors Ready. green when healthy and color is enabled', () => {
+		const output = renderDoctorHuman(HEALTHY, { color: true });
+		expect(output.endsWith('\u001b[32mReady.\u001b[0m')).toBe(true);
+	});
+
 	it('explains a failure with its remedy and the no-changes promise', () => {
 		const output = renderDoctorHuman(MISSING_CLI);
 		expect(output).toContain('✗ Dev Containers CLI');

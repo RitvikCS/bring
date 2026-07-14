@@ -10,6 +10,10 @@ that introduced it.
 
 ### Added
 
+- Colored `bring doctor` output in interactive terminals: green ✓, red ✗,
+  dimmed skipped checks. Automatically plain when piped, under `NO_COLOR`, or
+  with `--json`. A live animated checklist is planned for Phase 1E, when the
+  Ink spinner components exist to reuse.
 - `bring doctor` — non-mutating dependency diagnostics: locates the
   `devcontainer` and `docker` executables on PATH, probes them with bounded
   timeouts, verifies the Dev Containers CLI exposes the commands Bring needs

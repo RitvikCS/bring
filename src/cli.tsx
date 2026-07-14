@@ -28,8 +28,12 @@ async function main(): Promise<number> {
 		}
 		case 'doctor': {
 			const report = await runDoctor();
+			const color =
+				process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
 			console.log(
-				route.json ? renderDoctorJson(report) : renderDoctorHuman(report),
+				route.json
+					? renderDoctorJson(report)
+					: renderDoctorHuman(report, { color }),
 			);
 			return report.healthy ? EXIT.success : EXIT.dependency;
 		}
