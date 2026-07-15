@@ -3,6 +3,7 @@ import { render } from 'ink';
 import { findExecutable } from './adapters/find-executable.js';
 import { runDoctor } from './application/doctor.js';
 import { listKnownWorkspaces } from './application/list-workspaces.js';
+import { type AnsiCode, makePaint } from './cli/ansi.js';
 import { EXIT } from './cli/exit-codes.js';
 import { helpText } from './cli/help.js';
 import { parseArgv } from './cli/parse-argv.js';
@@ -12,7 +13,12 @@ import { getVersion } from './cli/version.js';
 import { stateFilePath } from './stores/workspace-store.js';
 import { App } from './tui/App.js';
 import { realEnvironment } from './tui/load.js';
-import type { Section } from './tui/state.js';
+import {
+	type Section,
+	statusColor,
+	statusLabel,
+	statusSymbol,
+} from './tui/state.js';
 
 async function main(): Promise<number> {
 	const route = parseArgv(process.argv.slice(2));
@@ -61,10 +67,19 @@ async function main(): Promise<number> {
 				);
 				return EXIT.success;
 			}
+			const color =
+				process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
+			const paint = makePaint(color);
 			const nameWidth = Math.max(...listings.map((l) => l.name.length), 4);
 			for (const l of listings) {
+				const inkColor = statusColor(l.status);
+				const status = `${statusSymbol(l.status)} ${statusLabel(l.status).padEnd(12)}`;
 				console.log(
-					`${l.name.padEnd(nameWidth)}  ${l.status.padEnd(11)}  ${l.path}`,
+					`${paint('bold', l.name.padEnd(nameWidth))}  ${
+						inkColor === undefined
+							? status
+							: paint(inkColor as AnsiCode, status)
+					}  ${paint('dim', l.path)}`,
 				);
 			}
 			return EXIT.success;

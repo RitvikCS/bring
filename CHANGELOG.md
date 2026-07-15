@@ -22,13 +22,24 @@ that introduced it.
   instead of rendering a broken screen. A failing `bring doctor` check blocks
   the TUI with the diagnostics and a retry key rather than letting
   operations fail confusingly later. Running `bring` without an interactive
-  terminal explains itself and exits with a usage error.
+  terminal explains itself and exits with a usage error. (`e2d8479`)
 
 - `--dotfiles <repo-url>` on `up` and `rebuild`: applies the dotfiles repo
   via the upstream `--dotfiles-repository` flag and remembers it after one
   success, so later ups (CLI and TUI alike) apply it automatically.
   `--dotfiles none` skips a single run; a new URL replaces the remembered
-  one (spec amendment A6).
+  one (spec amendment A6). (`a6a56ad`)
+
+### Changed
+
+- First hand-testing polish round for the TUI and direct output: the list
+  pane no longer changes width between states (long values truncate instead
+  of squeezing the layout), the TUI refreshes every 3 seconds while idle so
+  changes made from another terminal show up, key hints render with the key
+  in the accent color instead of a flat dim string, the detail pane and
+  `bring status` show the remembered dotfiles default, `bring ls` and
+  `bring status` gained status symbols and color, the remembered-config
+  note shrank to one dim line, and entering a shell prints how to get back.
 
 ### Fixed
 

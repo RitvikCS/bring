@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../direct/Spinner.js';
+import { KeyHints } from './KeyHints.js';
 import { formatDuration, type OperationProgress } from './state.js';
 
 // The active-operation pane (P1-39, blueprint §12.2). Stages are the ones
@@ -62,13 +63,18 @@ export function OperationView({ progress }: { progress: OperationProgress }) {
 				</Box>
 			)}
 			<Box marginTop={1}>
-				<Text dimColor>
-					{settled
-						? progress.result?.outcome === 'success'
-							? '[Enter] Continue'
-							: '[Enter] Continue  [L] Show captured output'
-						: '[L] Show captured output'}
-				</Text>
+				<KeyHints
+					hints={
+						settled
+							? progress.result?.outcome === 'success'
+								? [['Enter', 'Continue']]
+								: [
+										['Enter', 'Continue'],
+										['L', 'Show captured output'],
+									]
+							: [['L', 'Show captured output']]
+					}
+				/>
 			</Box>
 		</Box>
 	);

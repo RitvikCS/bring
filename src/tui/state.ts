@@ -77,6 +77,8 @@ export interface TuiState {
 	operation: OperationProgress | null;
 	/** Bottom-left status line ("✓ ml-platform ready in 8.4s"). */
 	statusMessage: string;
+	/** The user-wide dotfiles default (A6), shown in the detail pane. */
+	dotfilesRepository: string | null;
 }
 
 export const INITIAL_STATE: TuiState = {
@@ -91,12 +93,21 @@ export const INITIAL_STATE: TuiState = {
 	logView: null,
 	operation: null,
 	statusMessage: 'Checking your setup…',
+	dotfilesRepository: null,
 };
 
 export type TuiAction =
 	| { type: 'doctor-blocked'; report: DoctorReport }
-	| { type: 'loaded'; workspaces: TuiWorkspace[] }
-	| { type: 'refreshed'; workspaces: TuiWorkspace[] }
+	| {
+			type: 'loaded';
+			workspaces: TuiWorkspace[];
+			dotfilesRepository?: string | null;
+	  }
+	| {
+			type: 'refreshed';
+			workspaces: TuiWorkspace[];
+			dotfilesRepository?: string | null;
+	  }
 	| { type: 'retry-loading' }
 	| { type: 'move-selection'; delta: 1 | -1 }
 	| { type: 'move-section'; delta: 1 | -1 }
@@ -180,6 +191,10 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			return {
 				...state,
 				phase: 'ready',
+				dotfilesRepository:
+					action.dotfilesRepository !== undefined
+						? action.dotfilesRepository
+						: state.dotfilesRepository,
 				workspaces,
 				selectedPath: workspaces[0]?.ref.rootPath ?? null,
 				statusMessage:
@@ -207,6 +222,10 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			return {
 				...state,
 				workspaces,
+				dotfilesRepository:
+					action.dotfilesRepository !== undefined
+						? action.dotfilesRepository
+						: state.dotfilesRepository,
 				selectedPath: stillThere
 					? state.selectedPath
 					: (workspaces[0]?.ref.rootPath ?? null),

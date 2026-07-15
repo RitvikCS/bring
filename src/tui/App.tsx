@@ -68,7 +68,11 @@ export function App({
 
 	const refresh = useCallback(async () => {
 		const workspaces = await environment.loadWorkspaces();
-		dispatch({ type: 'refreshed', workspaces });
+		dispatch({
+			type: 'refreshed',
+			workspaces,
+			dotfilesRepository: environment.dotfilesDefault(),
+		});
 	}, [environment]);
 
 	// Loading phase (§11.5): doctor gates everything (P1-43).
@@ -88,13 +92,37 @@ export function App({
 			}
 			const workspaces = await environment.loadWorkspaces();
 			if (!cancelled) {
-				dispatch({ type: 'loaded', workspaces });
+				dispatch({
+					type: 'loaded',
+					workspaces,
+					dotfilesRepository: environment.dotfilesDefault(),
+				});
 			}
 		})();
 		return () => {
 			cancelled = true;
 		};
 	}, [state.phase, environment]);
+
+	// The world changes underneath the TUI (a `bring down` in another
+	// terminal, a container dying) — poll while idle so the list stays
+	// truthful. Skipped whenever an operation, modal, or log view is open.
+	useEffect(() => {
+		if (state.phase !== 'ready') {
+			return;
+		}
+		const timer = setInterval(() => {
+			const current = stateRef.current;
+			if (
+				current.operation === null &&
+				current.modal === null &&
+				current.logView === null
+			) {
+				void refresh();
+			}
+		}, 3000);
+		return () => clearInterval(timer);
+	}, [state.phase, refresh]);
 
 	const runMutation = useCallback(
 		(kind: OperationKind, workspace: TuiWorkspace) => {
@@ -155,6 +183,9 @@ export function App({
 			// P1-42: the shell owns the terminal until it exits; Ink restores
 			// the alternate screen and repaints when the suspension ends.
 			await suspendTerminal(async () => {
+				process.stdout.write(
+					`Shell in ${workspace.name} — exit (or Ctrl-D) returns to Bring.\n`,
+				);
 				await environment.shell(workspace.ref);
 			});
 			dispatch({
@@ -507,7 +538,10 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		state.operation !== null ? (
 			<OperationView progress={state.operation} />
 		) : (
-			<WorkspaceDetail workspace={selected} />
+			<WorkspaceDetail
+				workspace={selected}
+				dotfilesRepository={state.dotfilesRepository}
+			/>
 		);
 
 	if (mode === 'narrow') {
@@ -562,6 +596,9 @@ function Pane({
 			paddingX={1}
 			flexDirection="column"
 			width={width}
+			// A fixed-width pane must never be squeezed by long content in
+			// its sibling — that reads as the layout jumping between states.
+			flexShrink={width !== undefined ? 0 : undefined}
 			flexGrow={grow === true ? 1 : undefined}
 		>
 			{children}
@@ -570,20 +607,39 @@ function Pane({
 }
 
 function StatusBar({ state, size }: { state: TuiState; size: Size }) {
-	const hints =
+	const hints: readonly (readonly [string, string])[] =
 		state.logView !== null
-			? 'j/k scroll · Esc back'
+			? [
+					['j/k', 'scroll'],
+					['Esc', 'back'],
+				]
 			: state.modal !== null
-				? 'Esc close'
-				: 'h/l tabs · j/k select · ⏎ action · ? help · q quit';
+				? [['Esc', 'close']]
+				: [
+						['h/l', 'tabs'],
+						['j/k', 'select'],
+						['⏎', 'action'],
+						['?', 'help'],
+						['q', 'quit'],
+					];
+	const hintsWidth = hints.reduce(
+		(n, [k, l]) => n + k.length + l.length + 4,
+		0,
+	);
 	const message = state.statusMessage;
-	const room = Math.max(size.columns - hints.length - 4, 8);
+	const room = Math.max(size.columns - hintsWidth - 4, 8);
 	return (
 		<Box paddingX={1} justifyContent="space-between">
 			<Text wrap="truncate">
 				{message.length > room ? `${message.slice(0, room - 1)}…` : message}
 			</Text>
-			<Text dimColor>{hints}</Text>
+			<Box gap={1}>
+				{hints.map(([key, label]) => (
+					<Text key={`${key}-${label}`}>
+						<Text color="cyan">{key}</Text> <Text dimColor>{label}</Text>
+					</Text>
+				))}
+			</Box>
 		</Box>
 	);
 }

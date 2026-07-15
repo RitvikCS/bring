@@ -2,6 +2,7 @@ import { relative } from 'node:path';
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
 import type { WorkspaceStatus } from '../core/types.js';
+import { KeyHints } from './KeyHints.js';
 import {
 	statusColor,
 	statusLabel,
@@ -48,7 +49,7 @@ export function WorkspaceList({
 	const window = workspaces.slice(start, start + rows);
 	return (
 		<Box flexDirection="column">
-			<Text bold>
+			<Text bold color="cyan">
 				WORKSPACES{' '}
 				<Text dimColor>
 					{selectedIndex + 1}/{workspaces.length}
@@ -75,8 +76,10 @@ export function WorkspaceList({
 
 export function WorkspaceDetail({
 	workspace,
+	dotfilesRepository,
 }: {
 	workspace: TuiWorkspace | null;
+	dotfilesRepository?: string | null;
 }) {
 	if (workspace === null) {
 		return <Text dimColor>Nothing selected.</Text>;
@@ -87,7 +90,9 @@ export function WorkspaceDetail({
 	return (
 		<Box flexDirection="column">
 			<Text bold>{workspace.name}</Text>
-			<Text dimColor>{workspace.ref.rootPath}</Text>
+			<Text dimColor wrap="truncate-middle">
+				{workspace.ref.rootPath}
+			</Text>
 			<Box marginTop={1} flexDirection="column">
 				<DetailRow label="Status">
 					<Text color={statusColor(workspace.status)}>
@@ -96,19 +101,28 @@ export function WorkspaceDetail({
 				</DetailRow>
 				{workspace.containerIds.length > 0 && (
 					<DetailRow label="Containers">
-						<Text>{workspace.containerIds.join(', ')}</Text>
+						<Text wrap="truncate">{workspace.containerIds.join(', ')}</Text>
 					</DetailRow>
 				)}
 				{workspace.imageNames.length > 0 && (
 					<DetailRow label="Image">
-						<Text>{workspace.imageNames.join(', ')}</Text>
+						<Text wrap="truncate-middle">
+							{workspace.imageNames.join(', ')}
+						</Text>
 					</DetailRow>
 				)}
 				<DetailRow label="Config">
-					<Text>
+					<Text wrap="truncate">
 						{relative(workspace.ref.rootPath, workspace.ref.configPath)}
 					</Text>
 				</DetailRow>
+				{typeof dotfilesRepository === 'string' && (
+					<DetailRow label="Dotfiles">
+						<Text wrap="truncate-middle">
+							{dotfilesRepository} <Text dimColor>(user default)</Text>
+						</Text>
+					</DetailRow>
+				)}
 			</Box>
 			{workspace.status === 'failed' && workspace.problem !== undefined && (
 				<Box marginTop={1} flexDirection="column">
@@ -137,7 +151,7 @@ export function WorkspaceDetail({
 				</Box>
 			)}
 			<Box marginTop={1}>
-				<Text dimColor>{actionHints(workspace.status)}</Text>
+				<KeyHints hints={actionHints(workspace.status)} />
 			</Box>
 		</Box>
 	);
@@ -162,7 +176,7 @@ function MissingConfigDetail({ workspace }: { workspace: TuiWorkspace }) {
 				</Text>
 			</Box>
 			<Box marginTop={1}>
-				<Text dimColor>[r] Check again</Text>
+				<KeyHints hints={[['r', 'Check again']]} />
 			</Box>
 		</Box>
 	);
@@ -177,25 +191,43 @@ function DetailRow({
 }) {
 	return (
 		<Box>
-			<Box width={12}>
-				<Text dimColor>{label}</Text>
+			<Box width={12} flexShrink={0}>
+				<Text color="cyan" dimColor>
+					{label}
+				</Text>
 			</Box>
 			{children}
 		</Box>
 	);
 }
 
-function actionHints(status: WorkspaceStatus): string {
+function actionHints(status: WorkspaceStatus): [string, string][] {
 	switch (status) {
 		case 'running':
-			return '[e] Shell  [d] Down  [r] Rebuild  [L] Logs  [x] Remove';
+			return [
+				['e', 'Shell'],
+				['d', 'Down'],
+				['r', 'Rebuild'],
+				['L', 'Logs'],
+				['x', 'Remove'],
+			];
 		case 'stopped':
-			return '[u] Up  [r] Rebuild  [L] Logs  [x] Remove';
+			return [
+				['u', 'Up'],
+				['r', 'Rebuild'],
+				['L', 'Logs'],
+				['x', 'Remove'],
+			];
 		case 'failed':
-			return '[u] Retry  [r] Rebuild  [L] Logs  [x] Remove';
+			return [
+				['u', 'Retry'],
+				['r', 'Rebuild'],
+				['L', 'Logs'],
+				['x', 'Remove'],
+			];
 		case 'not-created':
-			return '[u] Up';
+			return [['u', 'Up']];
 		default:
-			return '';
+			return [];
 	}
 }

@@ -35,6 +35,8 @@ export interface TuiEnvironment {
 	/** Runs while the terminal is suspended — inherited stdio (§13.4). */
 	shell(workspace: WorkspaceRef): Promise<OperationResult>;
 	readLog(workspace: WorkspaceRef): string | null;
+	/** The user-wide dotfiles default, if one is remembered (A6). */
+	dotfilesDefault(): string | null;
 }
 
 export function realEnvironment(env: NodeJS.ProcessEnv): TuiEnvironment {
@@ -81,6 +83,7 @@ export function realEnvironment(env: NodeJS.ProcessEnv): TuiEnvironment {
 				workspace.configPath,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
+		dotfilesDefault: () => loadState(stateFile).dotfilesRepository ?? null,
 	};
 }
 

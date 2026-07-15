@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import type { DoctorReport } from '../application/doctor.js';
+import { KeyHints } from './KeyHints.js';
 
 // Doctor-blocked screen (P1-43, spec §11.5): the TUI refuses to pretend
 // everything works when a dependency is broken. Same checks as
@@ -51,7 +52,12 @@ export function DoctorBlocked({ report }: { report: DoctorReport }) {
 				</Box>
 			)}
 			<Box marginTop={1}>
-				<Text dimColor>[r] Check again [q] Quit</Text>
+				<KeyHints
+					hints={[
+						['r', 'Check again'],
+						['q', 'Quit'],
+					]}
+				/>
 			</Box>
 		</Box>
 	);

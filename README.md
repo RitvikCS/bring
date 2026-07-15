@@ -51,6 +51,24 @@ manages them via Docker.)
 Bring checks these at runtime (`bring doctor`) and explains what's missing —
 it never installs them for you.
 
+## Where Bring keeps its state
+
+Everything lives under `~/.local/state/bring/` (or `$XDG_STATE_HOME/bring`
+if you set it):
+
+- `state.json` — the workspace registry: every project Bring has
+  successfully brought up (path, last-used time, which config file you
+  chose), plus `dotfilesRepository`, the user-wide dotfiles default set by
+  `--dotfiles <url>`. It is plain JSON and safe to edit by hand — for
+  example, delete the `dotfilesRepository` line to clear the dotfiles
+  default, or remove a workspace entry to forget a project. A corrupt or
+  deleted file is never an error; Bring just starts with an empty registry.
+- `logs/<workspace-id>/` — the captured output of the latest (and previous)
+  operation per workspace, shown by `bring logs`. Delete freely.
+- `locks/` — transient per-workspace operation locks.
+
+Bring never stores anything inside your project folders.
+
 ## Developing
 
 ```sh

@@ -19,7 +19,9 @@ import { DirectOperation } from '../direct/DirectOperation.js';
 import { formatResult, formatResultJson } from '../direct/format-result.js';
 import { clearLogs, readLatestLog } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
-import { stateFilePath } from '../stores/workspace-store.js';
+import { loadState, stateFilePath } from '../stores/workspace-store.js';
+import { statusColor, statusLabel, statusSymbol } from '../tui/state.js';
+import { type AnsiCode, makePaint } from './ansi.js';
 import { EXIT } from './exit-codes.js';
 import type { CliRoute } from './parse-argv.js';
 
@@ -48,9 +50,11 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	if (resolved.outcome !== 'resolved') {
 		return reportResolutionFailure(resolved, json);
 	}
+	const paint = makePaint(color);
 	if (usedRememberedConfig !== undefined && !json) {
+		const rel = relative(resolved.workspace.rootPath, usedRememberedConfig);
 		console.error(
-			`Using ${usedRememberedConfig} (remembered from your last --config choice; pass --config to override).`,
+			paint('dim', `· config ${rel} (remembered; --config overrides)`),
 		);
 	}
 	const workspace = resolved.workspace;
@@ -82,7 +86,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	};
 
 	if (route.action === 'status') {
-		return runStatus(ctx, workspace, json);
+		return runStatus(ctx, workspace, json, paint);
 	}
 
 	if (route.action === 'shell') {
@@ -259,6 +263,7 @@ async function runStatus(
 	ctx: OperationContext,
 	workspace: WorkspaceRef,
 	json: boolean,
+	paint: ReturnType<typeof makePaint>,
 ): Promise<number> {
 	const result = await getSnapshot(ctx, workspace);
 	if (!result.ok) {
@@ -266,6 +271,8 @@ async function runStatus(
 		return exitCodeForProblem(result.problem.code);
 	}
 	const s = result.snapshot;
+	const dotfilesRepository =
+		loadState(ctx.stateFile).dotfilesRepository ?? null;
 	if (json) {
 		console.log(
 			JSON.stringify(
@@ -279,6 +286,7 @@ async function runStatus(
 					containerIds: s.containerIds,
 					imageNames: s.imageNames,
 					forwardedPorts: s.forwardedPorts,
+					dotfilesRepository,
 				},
 				null,
 				2,
@@ -286,25 +294,37 @@ async function runStatus(
 		);
 		return EXIT.success;
 	}
+	const statusInk = statusColor(s.status);
+	const statusText = `${statusSymbol(s.status)} ${statusLabel(s.status)}`;
+	const label = (text: string) => paint('dim', text.padEnd(12));
 	const lines = [
-		`${s.name}  ${s.status}`,
-		`  config      ${relative(s.workspace.rootPath, s.workspace.configPath)}`,
+		`${paint('bold', s.name)}  ${
+			statusInk === undefined
+				? statusText
+				: paint(statusInk as AnsiCode, statusText)
+		}`,
+		`  ${label('config')}${relative(s.workspace.rootPath, s.workspace.configPath)}`,
 	];
 	if (s.containerIds.length > 0) {
-		lines.push(`  containers  ${s.containerIds.join(', ')}`);
+		lines.push(`  ${label('containers')}${s.containerIds.join(', ')}`);
 	}
 	if (s.imageNames.length > 0) {
-		lines.push(`  images      ${s.imageNames.join(', ')}`);
+		lines.push(`  ${label('images')}${s.imageNames.join(', ')}`);
 	}
 	if (s.forwardedPorts.length > 0) {
 		lines.push(
-			`  ports       ${s.forwardedPorts
+			`  ${label('ports')}${s.forwardedPorts
 				.map((p) =>
 					p.hostPort === undefined
 						? `${p.containerPort}`
 						: `${p.hostPort} → ${p.containerPort}`,
 				)
 				.join(', ')}`,
+		);
+	}
+	if (dotfilesRepository !== null) {
+		lines.push(
+			`  ${label('dotfiles')}${dotfilesRepository} ${paint('dim', '(user default)')}`,
 		);
 	}
 	console.log(lines.join('\n'));

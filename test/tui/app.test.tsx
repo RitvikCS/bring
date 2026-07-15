@@ -47,6 +47,7 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 		down: () => Promise.reject(new Error('not in this test')),
 		shell: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
+		dotfilesDefault: () => null,
 		...overrides,
 	};
 }
@@ -120,6 +121,20 @@ describe('detail variants (§12.1, §12.3)', () => {
 		const frame = view(ready([makeWorkspace('fresh', 'not-created')]));
 		expect(frame).toContain('Never built');
 		expect(frame).toContain('[u] Up');
+	});
+
+	it('shows the remembered dotfiles default when one is set (A6)', () => {
+		const state = stateFrom([
+			{
+				type: 'loaded',
+				workspaces: [makeWorkspace('a', 'running')],
+				dotfilesRepository: 'https://github.com/u/dotfiles',
+			},
+		]);
+		const frame = view(state);
+		expect(frame).toContain('Dotfiles');
+		expect(frame).toContain('https://github.com/u/dotfiles');
+		expect(frame).toContain('(user default)');
 	});
 
 	it('failed shows the concise problem and the log action', () => {
