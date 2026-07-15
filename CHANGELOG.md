@@ -34,7 +34,7 @@ that introduced it.
   folder (marked "this folder") instead of an empty screen — press `u` and
   it becomes a normal registered workspace. A frame-geometry regression
   test also guards that no TUI line can exceed the terminal width or lose
-  its right border, at any size. (`8d34796`)
+  its right border, at any size. (`5660ac8`)
 
 ### Changed
 
