@@ -77,7 +77,7 @@ async function checkDevcontainer(
 ): Promise<DoctorCheck[]> {
 	const cliLabel = 'Dev Containers CLI';
 	const capsLabel = 'CLI capabilities';
-	const executable = findExecutable('devcontainer', env['PATH']);
+	const executable = findExecutable('devcontainer', env.PATH);
 
 	if (executable === null) {
 		return [
@@ -175,7 +175,7 @@ async function checkDocker(
 ): Promise<DoctorCheck[]> {
 	const clientLabel = 'Docker client';
 	const daemonLabel = 'Docker daemon';
-	const executable = findExecutable('docker', env['PATH']);
+	const executable = findExecutable('docker', env.PATH);
 
 	if (executable === null) {
 		return [

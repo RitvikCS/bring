@@ -45,9 +45,7 @@ export async function bringUp(
 	if (options.rebuild === true) {
 		const flags = await detectUpFlags(ctx.devcontainerExe, { env: ctx.env });
 		const supported =
-			flags !== null &&
-			flags.replace &&
-			(options.noCache !== true || flags.noCache);
+			flags?.replace === true && (options.noCache !== true || flags.noCache);
 		if (!supported) {
 			return fail({
 				code: 'UNSUPPORTED_CAPABILITY',

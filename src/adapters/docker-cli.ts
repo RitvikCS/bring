@@ -81,11 +81,11 @@ export function parsePsLines(stdout: string): ContainerInfo[] {
 		try {
 			const row = JSON.parse(trimmed) as Record<string, string>;
 			containers.push({
-				id: row['ID'] ?? '',
-				name: row['Names'] ?? '',
-				state: row['State'] ?? 'unknown',
-				image: row['Image'] ?? '',
-				ports: parsePorts(row['Ports'] ?? ''),
+				id: row.ID ?? '',
+				name: row.Names ?? '',
+				state: row.State ?? 'unknown',
+				image: row.Image ?? '',
+				ports: parsePorts(row.Ports ?? ''),
 			});
 		} catch {
 			// A malformed line never sinks the inventory.

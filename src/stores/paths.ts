@@ -7,10 +7,10 @@ import { join } from 'node:path';
  * itself lands in P1-11.
  */
 export function bringStateDir(env: NodeJS.ProcessEnv): string {
-	const xdgState = env['XDG_STATE_HOME'];
+	const xdgState = env.XDG_STATE_HOME;
 	if (xdgState !== undefined && xdgState.length > 0) {
 		return join(xdgState, 'bring');
 	}
-	const home = env['HOME'] ?? homedir();
+	const home = env.HOME ?? homedir();
 	return join(home, '.local', 'state', 'bring');
 }

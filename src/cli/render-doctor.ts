@@ -36,17 +36,7 @@ export function renderDoctorHuman(
 		: (_code: keyof typeof ANSI, text: string) => text;
 
 	const labelWidth = Math.max(...report.checks.map((c) => c.label.length));
-	const lines = report.checks.map((c) => {
-		const line = `${MARKS[c.status]} ${c.label.padEnd(labelWidth)}  ${c.detail}`;
-		switch (c.status) {
-			case 'ok':
-				return `${paint('green', MARKS.ok)}${line.slice(MARKS.ok.length)}`;
-			case 'failed':
-				return `${paint('red', MARKS.failed)}${line.slice(MARKS.failed.length)}`;
-			case 'skipped':
-				return paint('dim', line);
-		}
-	});
+	const lines = report.checks.map((c) => renderCheckLine(c, labelWidth, paint));
 
 	if (report.healthy) {
 		return `${lines.join('\n')}\n\n${paint('green', 'Ready.')}`;
@@ -65,6 +55,22 @@ export function renderDoctorHuman(
 		});
 
 	return `${lines.join('\n')}\n\n${guidance.join('\n\n')}\n\nNothing was changed by Bring.`;
+}
+
+function renderCheckLine(
+	check: DoctorCheck,
+	labelWidth: number,
+	paint: (code: keyof typeof ANSI, text: string) => string,
+): string {
+	const line = `${MARKS[check.status]} ${check.label.padEnd(labelWidth)}  ${check.detail}`;
+	switch (check.status) {
+		case 'ok':
+			return `${paint('green', MARKS.ok)}${line.slice(MARKS.ok.length)}`;
+		case 'failed':
+			return `${paint('red', MARKS.failed)}${line.slice(MARKS.failed.length)}`;
+		case 'skipped':
+			return paint('dim', line);
+	}
 }
 
 /**

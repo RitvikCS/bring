@@ -71,8 +71,13 @@ describe('renderDoctorHuman', () => {
 		const output = renderDoctorHuman(MISSING_CLI, { color: true });
 		expect(output).toContain('\u001b[32m✓\u001b[0m Node.js');
 		expect(output).toContain('\u001b[31m✗\u001b[0m Dev Containers CLI');
-		// The whole skipped line is dimmed.
-		expect(output).toMatch(/\u001b\[2m- CLI capabilities.*\u001b\[0m/);
+		// The whole skipped line is dimmed (string checks, not a regex:
+		// Biome forbids control characters in regular expressions).
+		const dimmedLine = output
+			.split('\n')
+			.find((line) => line.includes('CLI capabilities'));
+		expect(dimmedLine?.startsWith('\u001b[2m')).toBe(true);
+		expect(dimmedLine?.endsWith('\u001b[0m')).toBe(true);
 	});
 
 	it('colors Ready. green when healthy and color is enabled', () => {

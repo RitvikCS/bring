@@ -47,7 +47,7 @@ async function main(): Promise<number> {
 		case 'ls': {
 			const listings = await listKnownWorkspaces({
 				stateFile: stateFilePath(process.env),
-				dockerExe: findExecutable('docker', process.env['PATH']),
+				dockerExe: findExecutable('docker', process.env.PATH),
 				env: process.env,
 			});
 			if (route.json) {
