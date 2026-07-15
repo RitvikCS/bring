@@ -8,6 +8,22 @@ that introduced it.
 
 ## [Unreleased]
 
+### Added
+
+- The full-screen Workspaces interface (Phase 1F): `bring` (or
+  `bring workspaces`) now opens an alternate-screen TUI listing every known
+  workspace with live status symbols, a detail pane (metadata, ports,
+  contextual actions), and the whole lifecycle on single keys — `u`/`d`
+  up/down, `r` rebuild, `e` shell (the TUI suspends while the shell owns the
+  terminal, then repaints), `L` latest log with scrolling, `x` remove behind
+  an explicit confirmation that source files stay. Vim keys and arrows both
+  work; `?` shows help. Wide terminals get two panes, narrow ones a
+  list/detail flow, and below 60×18 Bring points at the direct commands
+  instead of rendering a broken screen. A failing `bring doctor` check blocks
+  the TUI with the diagnostics and a retry key rather than letting
+  operations fail confusingly later. Running `bring` without an interactive
+  terminal explains itself and exits with a usage error.
+
 ### Fixed
 
 - CI lint failures (masked locally by piping lint output through `tail`,

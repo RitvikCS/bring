@@ -11,6 +11,8 @@ import { runDirect } from './cli/run-direct.js';
 import { getVersion } from './cli/version.js';
 import { stateFilePath } from './stores/workspace-store.js';
 import { App } from './tui/App.js';
+import { realEnvironment } from './tui/load.js';
+import type { Section } from './tui/state.js';
 
 async function main(): Promise<number> {
 	const route = parseArgv(process.argv.slice(2));
@@ -25,10 +27,7 @@ async function main(): Promise<number> {
 			return EXIT.success;
 		}
 		case 'tui': {
-			const instance = render(<App version={getVersion()} />);
-			instance.unmount();
-			await instance.waitUntilExit();
-			return EXIT.success;
+			return runTui('workspaces');
 		}
 		case 'doctor': {
 			const report = await runDoctor();
@@ -71,11 +70,7 @@ async function main(): Promise<number> {
 			return EXIT.success;
 		}
 		case 'section': {
-			console.error(
-				`\`bring ${route.section}\` opens the full-screen interface, which is still being built.`,
-			);
-			console.error('Direct commands work today — see `bring --help`.');
-			return EXIT.usage;
+			return runTui(route.section as Section);
 		}
 		case 'usage-error': {
 			console.error(route.message);
@@ -95,6 +90,25 @@ async function main(): Promise<number> {
 			return EXIT.usage;
 		}
 	}
+}
+
+/** Open the full-screen interface (spec §11.1) at the given section. */
+async function runTui(section: Section): Promise<number> {
+	if (process.stdout.isTTY !== true || process.stdin.isTTY !== true) {
+		console.error('The full-screen interface needs an interactive terminal.');
+		console.error('Direct commands work everywhere — see `bring --help`.');
+		return EXIT.usage;
+	}
+	const instance = render(
+		<App
+			environment={realEnvironment(process.env)}
+			version={getVersion()}
+			initialSection={section}
+		/>,
+		{ alternateScreen: true, incrementalRendering: true, maxFps: 30 },
+	);
+	await instance.waitUntilExit();
+	return EXIT.success;
 }
 
 process.exitCode = await main();

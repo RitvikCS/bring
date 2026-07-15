@@ -19,9 +19,9 @@ bring doctor         # check that devcontainer CLI + Docker are ready
 Every command also takes `--json` for scripting and `--verbose` for the raw
 underlying output.
 
-> **Status: early development.** Direct commands (above) work end to end;
-> the full-screen TUI is next. Not yet published to npm — install from a
-> clone for now (see Developing).
+> **Status: early development.** Direct commands and the full-screen
+> Workspaces TUI (`bring` with no arguments) work end to end. Not yet
+> published to npm — install from a clone for now (see Developing).
 
 ## Why
 

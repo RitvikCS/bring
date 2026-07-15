@@ -8,7 +8,7 @@ export function helpText(version: string): string {
 Usage
   bring [target] <action>      Run one operation directly
   bring <global-command>       doctor · ls
-  bring                        Open the full-screen interface (coming soon)
+  bring                        Open the full-screen interface
 
 Targets
   .  this  <path>              Default target is the current directory.
@@ -49,5 +49,6 @@ Examples
   bring . shell -- zsh         Open zsh instead of bash
   bring status --json          Feed a script
 
-The full-screen TUI lands next. Follow along: https://github.com/RitvikCS/bring`;
+Inside the TUI, press ? for keyboard help.
+Follow along: https://github.com/RitvikCS/bring`;
 }
