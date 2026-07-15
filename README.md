@@ -6,16 +6,22 @@ environment up, take it down, inspect it, and clean it up without remembering
 the underlying `devcontainer` and `docker` syntax.
 
 ```sh
-bring            # full-screen TUI: your workspaces, their state, one-key actions
-bring this up    # start the dev container for the current project
-bring . down     # stop it (kept for a fast restart)
-bring . shell    # open a shell inside it
-bring . remove   # stop and delete devcontainer resources (never source files)
+bring up             # start the dev container for the current project
+bring down           # stop it (containers kept for a fast restart)
+bring shell          # open a shell inside it (bring shell -- zsh works too)
+bring status         # what's running, which ports, which config
+bring ls             # every project bring knows, with live status
+bring . remove       # stop and DELETE devcontainer resources (asks first)
+bring ../api up      # any action works on any path
+bring doctor         # check that devcontainer CLI + Docker are ready
 ```
 
-> **Status: early development.** The CLI installs and runs (`--version`,
-> `--help`, `bring doctor`), but lifecycle commands and the TUI are still
-> being built. Not yet published to npm.
+Every command also takes `--json` for scripting and `--verbose` for the raw
+underlying output.
+
+> **Status: early development.** Direct commands (above) work end to end;
+> the full-screen TUI is next. Not yet published to npm — install from a
+> clone for now (see Developing).
 
 ## Why
 

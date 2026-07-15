@@ -10,6 +10,23 @@ that introduced it.
 
 ### Added
 
+- Direct lifecycle commands, end to end: `bring [target] up | down | rebuild |
+  shell | logs | status | remove` with `.`/`this`/path targets, nearest-
+  ancestor config discovery, ambiguity errors instead of guessing, `stop` as
+  a `down` alias, `-- <cmd>` passthrough for shell, and `--config` for
+  explicit configurations. Interactive runs get a compact animated spinner
+  line; pipes get plain stage lines; `--verbose` streams the underlying
+  devcontainer output; `--json` emits exactly one schema-v1 document.
+  `remove` asks for confirmation (or takes `--yes`) and never touches source
+  files. (`c5d10f1`, `4a5ca37`, `a27d2ac`, `3ca4991`)
+- `bring ls` — list every workspace Bring has used, with live status from
+  Docker, most recent first (spec amendment A3). (`3ca4991`)
+- Under the hood for the above: safe process runner (argv arrays, no shell,
+  Ctrl+C forwarding), label-based Docker adapter (amendment A1 made
+  devcontainer lifecycle impossible upstream), per-workspace operation locks,
+  private rotating operation logs (`bring logs`, `--clear`), and a workspace
+  registry at `~/.local/state/bring/state.json`. (`c5d10f1`–`3ca4991`)
+
 - Colored `bring doctor` output in interactive terminals: green ✓, red ✗,
   dimmed skipped checks. Automatically plain when piped, under `NO_COLOR`, or
   with `--json`. A live animated checklist is planned for Phase 1E, when the
