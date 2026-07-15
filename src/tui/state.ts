@@ -347,7 +347,16 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				...state,
 				logView: {
 					workspaceName: action.workspaceName,
-					lines: action.content.replace(/\n$/, '').split('\n'),
+					// Raw child output carries ANSI codes and tabs that corrupt
+					// Ink's cell math and leave artifacts — sanitize per line.
+					lines: action.content
+						.replace(/\n$/, '')
+						.split('\n')
+						.map((line) =>
+							stripControlCharacters(
+								line.replace(/\t/g, '  ').replace(CSI_SEQUENCE, ''),
+							),
+						),
 					scroll: 0,
 				},
 			};

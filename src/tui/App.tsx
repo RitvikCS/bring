@@ -11,6 +11,7 @@ import type {
 	OperationResult,
 } from '../core/operation-events.js';
 import { Spinner } from '../direct/Spinner.js';
+import { enteringShellLine } from '../direct/shell-banner.js';
 import { DoctorBlocked } from './DoctorBlocked.js';
 import { keyToCommand, type TuiCommand } from './keymap.js';
 import { LogView } from './LogView.js';
@@ -183,9 +184,7 @@ export function App({
 			// P1-42: the shell owns the terminal until it exits; Ink restores
 			// the alternate screen and repaints when the suspension ends.
 			await suspendTerminal(async () => {
-				process.stdout.write(
-					`Shell in ${workspace.name} — exit (or Ctrl-D) returns to Bring.\n`,
-				);
+				process.stdout.write(`${enteringShellLine(workspace.name, true)}\n`);
 				await environment.shell(workspace.ref);
 			});
 			dispatch({

@@ -254,4 +254,27 @@ describe('openShell', () => {
 		expect(result.outcome).toBe('success');
 		expect(result.childExitCode).toBe(0);
 	});
+
+	it('hints when the shell command is missing (immediate 127)', async () => {
+		const h = makeHarness({
+			psOutput: RUNNING_PS,
+			devcontainerScript: 'exit 127',
+		});
+		const result = await openShell(h.ctx, h.workspace, ['zsh']);
+		expect(result.outcome).toBe('failed');
+		expect(result.problem?.summary).toContain('not available');
+		expect(result.childExitCode).toBe(127);
+	});
+
+	it('passes a late 127 through as a normal close — `exit` propagates the last in-shell status', async () => {
+		const h = makeHarness({
+			psOutput: RUNNING_PS,
+			devcontainerScript: 'exit 127',
+		});
+		const result = await openShell(h.ctx, h.workspace, ['bash'], undefined, {
+			fastFailWindowMs: 0,
+		});
+		expect(result.outcome).toBe('success');
+		expect(result.childExitCode).toBe(127);
+	});
 });

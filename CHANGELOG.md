@@ -43,6 +43,19 @@ that introduced it.
 
 ### Fixed
 
+- Leaving a long shell session whose last in-container command had failed
+  with 126/127 (e.g. a typo'd command right before `exit`) was misreported
+  as "`bash` is not available" — the missing-command hint now only applies
+  when the shell dies within its first ten seconds.
+- Resizing the TUI could leave fragments of old borders floating in blank
+  areas (stale cells under incremental rendering) — the screen now repaints
+  from scratch after a resize. Log lines are also sanitized (ANSI codes,
+  tabs) before display.
+- Entering a workspace shell is now unmistakable: `bring shell` and the
+  TUI's `e` print an accent-colored boundary line on entry (and the direct
+  command on return), instead of dropping you into a prompt that can look
+  identical to the host's.
+
 - CI lint failures (masked locally by piping lint output through `tail`,
   which hides exit codes — lesson learned). (`fff5c59`)
 - A workspace with both `.devcontainer/devcontainer.json` and

@@ -16,6 +16,7 @@ export async function openShell(
 	workspace: WorkspaceRef,
 	command: readonly string[] = ['bash'],
 	config?: string,
+	options: { fastFailWindowMs?: number } = {},
 ): Promise<OperationResult & { childExitCode?: number }> {
 	const name = basename(workspace.rootPath);
 	const { finish, fail } = resultBuilder(ctx.emit, 'shell', workspace, name);
@@ -33,6 +34,7 @@ export async function openShell(
 		});
 	}
 
+	const startedAt = Date.now();
 	const run = await runExec(
 		ctx.devcontainerExe,
 		workspace.rootPath,
@@ -47,9 +49,17 @@ export async function openShell(
 			remedy: 'bring doctor',
 		});
 	}
-	// 126/127 from exec means the command itself doesn't exist in the
-	// container — worth a hint, since `bash` is only a default.
-	if (run.result.exitCode === 126 || run.result.exitCode === 127) {
+	// An IMMEDIATE 126/127 means the command itself doesn't exist in the
+	// container — worth a hint, since `bash` is only a default. The same
+	// codes after a real session are just the user's last in-shell status
+	// propagated by `exit` (e.g. a typo'd command right before leaving),
+	// so they pass through like any other exit code.
+	const failedFast =
+		Date.now() - startedAt < (options.fastFailWindowMs ?? 10_000);
+	if (
+		failedFast &&
+		(run.result.exitCode === 126 || run.result.exitCode === 127)
+	) {
 		return {
 			...fail({
 				code: 'DEVCONTAINER_FAILED',

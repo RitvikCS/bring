@@ -1,4 +1,4 @@
-import { relative } from 'node:path';
+import { basename, relative } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { render } from 'ink';
 import { findExecutable } from '../adapters/find-executable.js';
@@ -17,6 +17,7 @@ import type { WorkspaceRef } from '../core/types.js';
 import type { resolveWorkspace } from '../core/workspace-resolver.js';
 import { DirectOperation } from '../direct/DirectOperation.js';
 import { formatResult, formatResultJson } from '../direct/format-result.js';
+import { enteringShellLine, leftShellLine } from '../direct/shell-banner.js';
 import { clearLogs, readLatestLog } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
 import { loadState, stateFilePath } from '../stores/workspace-store.js';
@@ -90,6 +91,8 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	}
 
 	if (route.action === 'shell') {
+		const name = basename(workspace.rootPath);
+		console.error(enteringShellLine(name, color));
 		const result = await openShell(
 			ctx,
 			workspace,
@@ -100,6 +103,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 			console.error(formatResult(result, { color }));
 			return exitFor(result);
 		}
+		console.error(leftShellLine(name, color, result.childExitCode));
 		return result.childExitCode ?? EXIT.success;
 	}
 
@@ -129,7 +133,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		const remembered = resolveDotfiles(stateFilePath(env), undefined);
 		if (remembered !== null) {
 			console.error(
-				`Applying dotfiles from ${remembered.repository} (remembered; --dotfiles none to skip once).`,
+				paint(
+					'dim',
+					`· dotfiles ${remembered.repository} (remembered; --dotfiles none skips once)`,
+				),
 			);
 		}
 	}

@@ -199,6 +199,17 @@ describe('modals never bypass confirmation', () => {
 });
 
 describe('log view', () => {
+	it('sanitizes ANSI codes and tabs out of log lines', () => {
+		let state = readyState([makeWorkspace('a', 'stopped')]);
+		const esc = String.fromCharCode(27);
+		state = reduce(state, {
+			type: 'open-logs',
+			workspaceName: 'a',
+			content: `${esc}[32mok${esc}[0m\tdone\n`,
+		});
+		expect(state.logView?.lines).toEqual(['ok  done']);
+	});
+
 	it('opens with content split into lines and scrolls clamped', () => {
 		let state = readyState([makeWorkspace('a', 'stopped')]);
 		state = reduce(state, {
