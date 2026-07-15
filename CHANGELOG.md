@@ -8,6 +8,17 @@ that introduced it.
 
 ## [Unreleased]
 
+### Fixed
+
+- CI lint failures (masked locally by piping lint output through `tail`,
+  which hides exit codes — lesson learned). (`fff5c59`)
+- A workspace with both `.devcontainer/devcontainer.json` and
+  `.devcontainer.json` demanded `--config` on *every* command. Bring now
+  remembers the choice after one successful `bring up --config …` and
+  announces which config it is using; explicit `--config` always overrides
+  (spec amendment A5). The resolved config is also now always passed to the
+  upstream CLI so it cannot silently pick the other file. (`1c1ad94`)
+
 ### Added
 
 - Direct lifecycle commands, end to end: `bring [target] up | down | rebuild |
