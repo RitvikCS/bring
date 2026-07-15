@@ -6,22 +6,24 @@ export function helpText(version: string): string {
 	return `bring ${version} — Dev Containers without the ceremony
 
 Usage
-  bring                        Open the full-screen interface
   bring [target] <action>      Run one operation directly
-  bring doctor                 Check that everything Bring needs is available
+  bring <global-command>       doctor · ls
+  bring                        Open the full-screen interface (coming soon)
 
 Targets
   .  this  <path>              Default target is the current directory.
+                               Bring finds the nearest devcontainer config
+                               upward from the target.
 
 Actions
   up                           Create/start the dev container for a workspace
   down                         Stop it, keeping containers for a fast restart
   rebuild                      Rebuild the environment (--no-cache supported)
-  shell                        Open an interactive shell inside it
-  logs                         Show the last captured operation log
+  shell                        Open a shell inside it (-- <cmd> to override)
+  logs                         Show the last captured operation log (--clear)
   status                       Show a one-workspace status summary
   remove                       Stop and DELETE devcontainer resources
-                               (source files are never touched)
+                               (asks first; source files are never touched)
 
 Note on down vs remove
   bring down    acts like  docker stop   (containers kept, restart is fast)
@@ -29,12 +31,23 @@ Note on down vs remove
 
 Global commands
   doctor                       Check Node, the devcontainer CLI, and Docker;
-                               explain what is missing (--json for scripts)
+                               explain what is missing
+  ls                           List known workspaces with live status
 
 Options
   --help, -h                   Show this help
   --version, -v                Show the Bring version
+  --json                       Machine-readable output, never animated
+  --verbose                    Stream the underlying command output
+  --config <path>              Use an explicit devcontainer.json
+  --yes, -y                    Skip the confirmation prompt (remove)
+  --no-cache                   Rebuild without the Docker build cache
 
-Workspace commands above land in the next release; this build routes
---help, --version, and doctor. Follow along: https://github.com/RitvikCS/bring`;
+Examples
+  bring up                     Start the current project
+  bring ../api down            Stop the api project next door
+  bring . shell -- zsh         Open zsh instead of bash
+  bring status --json          Feed a script
+
+The full-screen TUI lands next. Follow along: https://github.com/RitvikCS/bring`;
 }
