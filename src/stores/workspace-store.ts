@@ -11,6 +11,8 @@ export interface StoredWorkspace {
 export interface BringState {
 	schemaVersion: 1;
 	workspaces: StoredWorkspace[];
+	/** User-wide default passed as --dotfiles-repository (amendment A6). */
+	dotfilesRepository?: string;
 }
 
 const EMPTY_STATE: BringState = { schemaVersion: 1, workspaces: [] };
@@ -71,6 +73,20 @@ export function rememberWorkspace(
 	} else {
 		state.workspaces[existing] = entry;
 	}
+	writeStateAtomically(stateFile, state);
+	return state;
+}
+
+/**
+ * Remember the user's dotfiles repository (amendment A6). Set on every
+ * successful `up --dotfiles <url>`; applied by default to later ups.
+ */
+export function rememberDotfilesRepository(
+	stateFile: string,
+	repository: string,
+): BringState {
+	const state = loadState(stateFile);
+	state.dotfilesRepository = repository;
 	writeStateAtomically(stateFile, state);
 	return state;
 }

@@ -10,7 +10,11 @@ import type { OperationResult } from '../core/operation-events.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { writeOperationLog } from '../stores/log-store.js';
 import { acquireOperationLock } from '../stores/op-lock.js';
-import { rememberWorkspace } from '../stores/workspace-store.js';
+import {
+	loadState,
+	rememberDotfilesRepository,
+	rememberWorkspace,
+} from '../stores/workspace-store.js';
 import type { OperationContext } from './context.js';
 import { getSnapshot } from './get-status.js';
 import { resultBuilder } from './results.js';
@@ -20,6 +24,29 @@ export interface UpOptions {
 	/** True for `bring rebuild`: replace the existing container. */
 	rebuild?: boolean;
 	noCache?: boolean;
+	/**
+	 * Dotfiles repository (amendment A6): a URL applies (and is remembered
+	 * on success), `false` skips for this run, `undefined` applies the
+	 * remembered default if one exists.
+	 */
+	dotfiles?: string | false;
+}
+
+/** How the dotfiles repository for this run was chosen (amendment A6). */
+export function resolveDotfiles(
+	stateFile: string,
+	requested: string | false | undefined,
+): { repository: string; source: 'flag' | 'remembered' } | null {
+	if (requested === false) {
+		return null;
+	}
+	if (typeof requested === 'string') {
+		return { repository: requested, source: 'flag' };
+	}
+	const remembered = loadState(stateFile).dotfilesRepository;
+	return remembered === undefined
+		? null
+		: { repository: remembered, source: 'remembered' };
 }
 
 /**
@@ -42,15 +69,28 @@ export async function bringUp(
 		message: `Checking ${name}…`,
 	});
 
-	if (options.rebuild === true) {
+	// A remembered dotfiles default was validated when it was set, so only
+	// rebuild and an explicit --dotfiles pay for the capability probe.
+	const dotfiles = resolveDotfiles(ctx.stateFile, options.dotfiles);
+	if (options.rebuild === true || dotfiles?.source === 'flag') {
 		const flags = await detectUpFlags(ctx.devcontainerExe, { env: ctx.env });
-		const supported =
-			flags?.replace === true && (options.noCache !== true || flags.noCache);
-		if (!supported) {
+		if (options.rebuild === true) {
+			const supported =
+				flags?.replace === true && (options.noCache !== true || flags.noCache);
+			if (!supported) {
+				return fail({
+					code: 'UNSUPPORTED_CAPABILITY',
+					summary:
+						'The installed Dev Containers CLI does not support the rebuild flags Bring needs.',
+					remedy: 'npm install -g @devcontainers/cli@latest',
+				});
+			}
+		}
+		if (dotfiles?.source === 'flag' && flags?.dotfiles !== true) {
 			return fail({
 				code: 'UNSUPPORTED_CAPABILITY',
 				summary:
-					'The installed Dev Containers CLI does not support the rebuild flags Bring needs.',
+					'The installed Dev Containers CLI does not support --dotfiles-repository.',
 				remedy: 'npm install -g @devcontainers/cli@latest',
 			});
 		}
@@ -89,6 +129,7 @@ export async function bringUp(
 			config: options.config,
 			removeExistingContainer: options.rebuild === true,
 			buildNoCache: options.noCache === true,
+			dotfilesRepository: dotfiles?.repository,
 		};
 		const run = await runUp(ctx.devcontainerExe, workspace.rootPath, upFlags, {
 			env: ctx.env,
@@ -134,6 +175,9 @@ export async function bringUp(
 			containerIds.push(parsed.containerId);
 		}
 		rememberWorkspace(ctx.stateFile, workspace);
+		if (dotfiles?.source === 'flag') {
+			rememberDotfilesRepository(ctx.stateFile, dotfiles.repository);
+		}
 		ctx.emit({ type: 'stage', stage: 'ready', message: `${name} is ready` });
 		return finish({
 			outcome: 'success',

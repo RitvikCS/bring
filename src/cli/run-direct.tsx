@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { render } from 'ink';
 import { findExecutable } from '../adapters/find-executable.js';
 import { bringDown } from '../application/bring-down.js';
-import { bringUp } from '../application/bring-up.js';
+import { bringUp, resolveDotfiles } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
@@ -113,18 +113,39 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		}
 	}
 
+	// `--dotfiles none` skips once; a URL applies and is remembered on
+	// success; nothing given falls back to the remembered default (A6).
+	const dotfiles =
+		route.options.dotfiles === 'none' ? false : route.options.dotfiles;
+	if (
+		(route.action === 'up' || route.action === 'rebuild') &&
+		dotfiles === undefined &&
+		!json
+	) {
+		const remembered = resolveDotfiles(stateFilePath(env), undefined);
+		if (remembered !== null) {
+			console.error(
+				`Applying dotfiles from ${remembered.repository} (remembered; --dotfiles none to skip once).`,
+			);
+		}
+	}
+
 	// Always hand the exact resolved config to the upstream CLI: with two
 	// config locations present it would otherwise silently pick its own.
 	const mutation = route.action as 'up' | 'rebuild' | 'down' | 'remove';
 	const operation = (): Promise<OperationResult> => {
 		switch (mutation) {
 			case 'up':
-				return bringUp(ctx, workspace, { config: workspace.configPath });
+				return bringUp(ctx, workspace, {
+					config: workspace.configPath,
+					dotfiles,
+				});
 			case 'rebuild':
 				return bringUp(ctx, workspace, {
 					config: workspace.configPath,
 					rebuild: true,
 					noCache: route.options.noCache,
+					dotfiles,
 				});
 			case 'down':
 				return bringDown(ctx, workspace);

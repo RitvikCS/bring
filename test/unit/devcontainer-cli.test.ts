@@ -17,12 +17,13 @@ describe('argv builders', () => {
 		]);
 	});
 
-	it('appends config and rebuild flags when requested', () => {
+	it('appends config, rebuild, and dotfiles flags when requested', () => {
 		expect(
 			upArgv('/p', {
 				config: '/p/.devcontainer/alt/devcontainer.json',
 				removeExistingContainer: true,
 				buildNoCache: true,
+				dotfilesRepository: 'https://github.com/user/dotfiles',
 			}),
 		).toEqual([
 			'up',
@@ -32,6 +33,8 @@ describe('argv builders', () => {
 			'/p/.devcontainer/alt/devcontainer.json',
 			'--remove-existing-container',
 			'--build-no-cache',
+			'--dotfiles-repository',
+			'https://github.com/user/dotfiles',
 		]);
 	});
 
@@ -75,15 +78,20 @@ describe('parseUpResult', () => {
 });
 
 describe('detectUpFlags', () => {
-	it('detects both rebuild flags from up --help', async () => {
+	it('detects the rebuild and dotfiles flags from up --help', async () => {
 		const bin = writeFakeBin(
 			makeBinDir(),
 			'devcontainer',
 			`echo "Options:"
 echo "  --remove-existing-container  Remove the existing container"
-echo "  --build-no-cache             Build without cache"`,
+echo "  --build-no-cache             Build without cache"
+echo "  --dotfiles-repository        URL of a dotfiles Git repository"`,
 		);
-		expect(await detectUpFlags(bin)).toEqual({ replace: true, noCache: true });
+		expect(await detectUpFlags(bin)).toEqual({
+			replace: true,
+			noCache: true,
+			dotfiles: true,
+		});
 	});
 
 	it('reports missing flags', async () => {
@@ -91,6 +99,7 @@ echo "  --build-no-cache             Build without cache"`,
 		expect(await detectUpFlags(bin)).toEqual({
 			replace: false,
 			noCache: false,
+			dotfiles: false,
 		});
 	});
 });

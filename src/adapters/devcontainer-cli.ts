@@ -12,6 +12,7 @@ export interface UpFlags {
 	removeExistingContainer?: boolean;
 	buildNoCache?: boolean;
 	config?: string;
+	dotfilesRepository?: string;
 }
 
 export interface UpSuccess {
@@ -30,6 +31,9 @@ export function upArgv(workspaceRoot: string, flags: UpFlags = {}): string[] {
 	}
 	if (flags.buildNoCache === true) {
 		argv.push('--build-no-cache');
+	}
+	if (flags.dotfilesRepository !== undefined) {
+		argv.push('--dotfiles-repository', flags.dotfilesRepository);
 	}
 	return argv;
 }
@@ -110,21 +114,23 @@ export function parseUpResult(stdout: string): UpSuccess | null {
 	return null;
 }
 
-// Rebuild needs flags the capability detector must confirm first (spec §9.2).
+// Rebuild and dotfiles need flags the capability detector must confirm
+// first (spec §9.2).
 export const REBUILD_FLAGS = {
 	replace: '--remove-existing-container',
 	noCache: '--build-no-cache',
 } as const;
+export const DOTFILES_FLAG = '--dotfiles-repository';
 
 /**
- * Check `devcontainer up --help` for the rebuild flags. Bring refuses to
- * guess: a missing flag makes rebuild an UNSUPPORTED_CAPABILITY (exit 4)
- * instead of a mystery upstream error.
+ * Check `devcontainer up --help` for optional flags. Bring refuses to
+ * guess: a missing flag makes the feature an UNSUPPORTED_CAPABILITY
+ * (exit 4) instead of a mystery upstream error.
  */
 export async function detectUpFlags(
 	executable: string,
 	options: RunOptions = {},
-): Promise<{ replace: boolean; noCache: boolean } | null> {
+): Promise<{ replace: boolean; noCache: boolean; dotfiles: boolean } | null> {
 	const probe = await runCommand(executable, ['up', '--help'], options);
 	if (probe.outcome !== 'ran') {
 		return null;
@@ -133,5 +139,6 @@ export async function detectUpFlags(
 	return {
 		replace: text.includes(REBUILD_FLAGS.replace),
 		noCache: text.includes(REBUILD_FLAGS.noCache),
+		dotfiles: text.includes(DOTFILES_FLAG),
 	};
 }

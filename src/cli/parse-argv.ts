@@ -18,6 +18,8 @@ export interface DirectOptions {
 	noCache: boolean;
 	clear: boolean;
 	config?: string;
+	/** Dotfiles repo URL, or the literal `none` to skip once (A6). */
+	dotfiles?: string;
 	/** Tokens after `--`, only meaningful for shell. */
 	shellCommand?: string[];
 }
@@ -104,6 +106,19 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				break;
 			case '--no-color':
 				break; // honored by renderers via NO_COLOR handling in cli.tsx
+			case '--dotfiles': {
+				const value = head[i + 1];
+				if (value === undefined || value.startsWith('-')) {
+					return {
+						kind: 'usage-error',
+						message:
+							'--dotfiles needs a repository URL (or `none` to skip once), e.g. --dotfiles https://github.com/you/dotfiles',
+					};
+				}
+				options.dotfiles = value;
+				i++;
+				break;
+			}
 			case '--config': {
 				const value = head[i + 1];
 				if (value === undefined || value.startsWith('-')) {
@@ -186,6 +201,13 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 	}
 	if (options.clear && action !== 'logs') {
 		return usage('--clear only applies to logs.');
+	}
+	if (
+		options.dotfiles !== undefined &&
+		action !== 'up' &&
+		action !== 'rebuild'
+	) {
+		return usage('--dotfiles only applies to up and rebuild.');
 	}
 
 	return { kind: 'direct', target, action, options };

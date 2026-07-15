@@ -42,6 +42,8 @@ Options
   --config <path>              Use an explicit devcontainer.json
   --yes, -y                    Skip the confirmation prompt (remove)
   --no-cache                   Rebuild without the Docker build cache
+  --dotfiles <repo|none>       Apply a dotfiles repo during up/rebuild.
+                               Remembered after one success; none skips once
 
 Examples
   bring up                     Start the current project

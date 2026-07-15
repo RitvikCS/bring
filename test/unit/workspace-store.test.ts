@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	loadState,
+	rememberDotfilesRepository,
 	rememberWorkspace,
 	stateFilePath,
 } from '../../src/stores/workspace-store.js';
@@ -70,6 +71,29 @@ describe('workspace store', () => {
 		});
 		// And it round-trips from disk.
 		expect(loadState(file)).toEqual(state);
+	});
+
+	it('remembers a dotfiles repository without touching workspaces (A6)', () => {
+		const file = tempStateFile();
+		rememberWorkspace(
+			file,
+			{ rootPath: '/proj/a', configPath: '/proj/a/.devcontainer.json' },
+			new Date('2026-07-15T10:00:00Z'),
+		);
+		const state = rememberDotfilesRepository(
+			file,
+			'https://github.com/user/dotfiles',
+		);
+		expect(state.dotfilesRepository).toBe('https://github.com/user/dotfiles');
+		expect(state.workspaces).toHaveLength(1);
+		// Round-trips, and can be overwritten by a later choice.
+		expect(loadState(file).dotfilesRepository).toBe(
+			'https://github.com/user/dotfiles',
+		);
+		rememberDotfilesRepository(file, 'https://github.com/user/other');
+		expect(loadState(file).dotfilesRepository).toBe(
+			'https://github.com/user/other',
+		);
 	});
 
 	it('writes pretty JSON with a trailing newline', () => {

@@ -57,6 +57,14 @@ describe('parseArgv', () => {
 			'up',
 			{ config: 'x/devcontainer.json' },
 		],
+		// Dotfiles (A6): a URL or the literal `none`, on up and rebuild.
+		[
+			['up', '--dotfiles', 'https://github.com/u/dotfiles'],
+			'.',
+			'up',
+			{ dotfiles: 'https://github.com/u/dotfiles' },
+		],
+		[['rebuild', '--dotfiles', 'none'], '.', 'rebuild', { dotfiles: 'none' }],
 	] as const)('parses %j as a direct command', (argv, target, action, opts) => {
 		expect(parseArgv(argv)).toEqual({
 			kind: 'direct',
@@ -89,6 +97,8 @@ describe('parseArgv', () => {
 		[['--config'], /needs a path/i],
 		[['up', '--no-cache'], /only applies to rebuild/i],
 		[['up', '--clear'], /only applies to logs/i],
+		[['up', '--dotfiles'], /needs a repository url/i],
+		[['status', '--dotfiles', 'x'], /only applies to up and rebuild/i],
 		[['up', '--', 'zsh'], /only apply to shell/i],
 		[['--', 'zsh'], /only apply to shell/i],
 	] as const)('rejects %j with a usage error', (argv, pattern) => {

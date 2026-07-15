@@ -24,6 +24,12 @@ that introduced it.
   operations fail confusingly later. Running `bring` without an interactive
   terminal explains itself and exits with a usage error.
 
+- `--dotfiles <repo-url>` on `up` and `rebuild`: applies the dotfiles repo
+  via the upstream `--dotfiles-repository` flag and remembers it after one
+  success, so later ups (CLI and TUI alike) apply it automatically.
+  `--dotfiles none` skips a single run; a new URL replaces the remembered
+  one (spec amendment A6).
+
 ### Fixed
 
 - CI lint failures (masked locally by piping lint output through `tail`,

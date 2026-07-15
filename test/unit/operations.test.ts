@@ -5,7 +5,10 @@ import { bringUp } from '../../src/application/bring-up.js';
 import { getSnapshot } from '../../src/application/get-status.js';
 import { openShell } from '../../src/application/open-shell.js';
 import { acquireOperationLock } from '../../src/stores/op-lock.js';
-import { loadState } from '../../src/stores/workspace-store.js';
+import {
+	loadState,
+	rememberDotfilesRepository,
+} from '../../src/stores/workspace-store.js';
 import {
 	makeHarness,
 	RUNNING_PS,
@@ -125,6 +128,76 @@ echo '{"outcome":"success","containerId":"rebuilt1"}'`,
 		const recorded = readFileSync(`${h.ctx.devcontainerExe}.argv`, 'utf8');
 		expect(recorded).toContain('--remove-existing-container');
 		expect(recorded).toContain('--build-no-cache');
+	});
+});
+
+describe('bringUp dotfiles (A6)', () => {
+	const withDotfilesSupport = `if [ "$1" = "up" ] && [ "$2" = "--help" ]; then
+	echo "  --remove-existing-container"
+	echo "  --build-no-cache"
+	echo "  --dotfiles-repository"
+	exit 0
+fi
+printf '%s\\n' "devcontainer $*" >> "$0.argv"
+echo '{"outcome":"success","containerId":"new123"}'`;
+
+	it('passes an explicit repo through and remembers it on success', async () => {
+		const h = makeHarness({
+			psOutput: '',
+			devcontainerScript: withDotfilesSupport,
+		});
+		const result = await bringUp(h.ctx, h.workspace, {
+			dotfiles: 'https://github.com/u/dotfiles',
+		});
+		expect(result.outcome).toBe('success');
+		const recorded = readFileSync(`${h.ctx.devcontainerExe}.argv`, 'utf8');
+		expect(recorded).toContain(
+			'--dotfiles-repository https://github.com/u/dotfiles',
+		);
+		expect(loadState(h.ctx.stateFile).dotfilesRepository).toBe(
+			'https://github.com/u/dotfiles',
+		);
+	});
+
+	it('applies the remembered default without a capability probe', async () => {
+		const h = makeHarness({ psOutput: '' });
+		rememberDotfilesRepository(
+			h.ctx.stateFile,
+			'https://github.com/u/dotfiles',
+		);
+		const result = await bringUp(h.ctx, h.workspace);
+		expect(result.outcome).toBe('success');
+		// The default fake logs every call: no `up --help` probe ran.
+		expect(argvLog(h)).not.toContain('up --help');
+		expect(argvLog(h)).toContain(
+			'--dotfiles-repository https://github.com/u/dotfiles',
+		);
+	});
+
+	it('dotfiles: false skips once and keeps the remembered default', async () => {
+		const h = makeHarness({ psOutput: '' });
+		rememberDotfilesRepository(
+			h.ctx.stateFile,
+			'https://github.com/u/dotfiles',
+		);
+		const result = await bringUp(h.ctx, h.workspace, { dotfiles: false });
+		expect(result.outcome).toBe('success');
+		expect(argvLog(h)).not.toContain('--dotfiles-repository');
+		expect(loadState(h.ctx.stateFile).dotfilesRepository).toBe(
+			'https://github.com/u/dotfiles',
+		);
+	});
+
+	it('refuses an explicit repo when the CLI lacks the flag', async () => {
+		const h = makeHarness({ psOutput: '' });
+		const result = await bringUp(h.ctx, h.workspace, {
+			dotfiles: 'https://github.com/u/dotfiles',
+		});
+		expect(result).toMatchObject({
+			outcome: 'failed',
+			problem: { code: 'UNSUPPORTED_CAPABILITY' },
+		});
+		expect(loadState(h.ctx.stateFile).dotfilesRepository).toBeUndefined();
 	});
 });
 
