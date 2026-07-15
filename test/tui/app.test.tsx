@@ -123,6 +123,13 @@ describe('detail variants (§12.1, §12.3)', () => {
 		expect(frame).toContain('[u] Up');
 	});
 
+	it('marks an unregistered current-folder workspace in the list', () => {
+		const frame = view(
+			ready([{ ...makeWorkspace('fresh', 'not-created'), unregistered: true }]),
+		);
+		expect(frame).toContain('fresh (this folder)');
+	});
+
 	it('shows the remembered dotfiles default when one is set (A6)', () => {
 		const state = stateFrom([
 			{

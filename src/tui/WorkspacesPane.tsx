@@ -67,6 +67,9 @@ export function WorkspaceList({
 							{statusSymbol(workspace.status)}
 						</Text>{' '}
 						{workspace.name}
+						{workspace.unregistered === true && (
+							<Text dimColor> (this folder)</Text>
+						)}
 					</Text>
 				);
 			})}

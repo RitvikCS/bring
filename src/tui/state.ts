@@ -35,6 +35,12 @@ export interface TuiWorkspace {
 	forwardedPorts: ForwardedPort[];
 	/** Set after a failed operation this session (spec §13.5). */
 	problem?: BringProblem;
+	/**
+	 * The current directory has a config but isn't in the registry yet —
+	 * shown so first contact with the TUI is never an empty list. Cleared
+	 * naturally by the first successful up (which registers it).
+	 */
+	unregistered?: boolean;
 }
 
 export type Modal =

@@ -29,6 +29,12 @@ that introduced it.
   success, so later ups (CLI and TUI alike) apply it automatically.
   `--dotfiles none` skips a single run; a new URL replaces the remembered
   one (spec amendment A6). (`a6a56ad`)
+- First-contact affordance in the TUI: opening `bring` inside a project
+  that has a devcontainer config but was never brought up now lists that
+  folder (marked "this folder") instead of an empty screen — press `u` and
+  it becomes a normal registered workspace. A frame-geometry regression
+  test also guards that no TUI line can exceed the terminal width or lose
+  its right border, at any size. (`8d34796`)
 
 ### Changed
 

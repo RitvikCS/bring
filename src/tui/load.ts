@@ -7,6 +7,7 @@ import type { OperationContext } from '../application/context.js';
 import { type DoctorReport, runDoctor } from '../application/doctor.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
+import { resolveTarget } from '../application/resolve-target.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
@@ -39,7 +40,10 @@ export interface TuiEnvironment {
 	dotfilesDefault(): string | null;
 }
 
-export function realEnvironment(env: NodeJS.ProcessEnv): TuiEnvironment {
+export function realEnvironment(
+	env: NodeJS.ProcessEnv,
+	cwd: string = process.cwd(),
+): TuiEnvironment {
 	const stateDir = bringStateDir(env);
 	const stateFile = stateFilePath(env);
 
@@ -66,7 +70,25 @@ export function realEnvironment(env: NodeJS.ProcessEnv): TuiEnvironment {
 		loadWorkspaces: async () => {
 			const ctx = contextFor(() => {});
 			const entries = loadState(stateFile).workspaces;
-			return Promise.all(entries.map((entry) => loadOne(ctx, entry)));
+			const listed = await Promise.all(
+				entries.map((entry) => loadOne(ctx, entry)),
+			);
+			// First-contact affordance: if the directory the TUI was opened
+			// from has a devcontainer config but was never brought up, list
+			// it anyway — an empty screen in a valid project is a dead end.
+			const here = resolveTarget('.', { cwd, stateFile }).result;
+			if (
+				here.outcome === 'resolved' &&
+				!listed.some((w) => w.ref.rootPath === here.workspace.rootPath)
+			) {
+				const current = await loadOne(ctx, {
+					path: here.workspace.rootPath,
+					lastUsedAt: '',
+					lastConfigPath: here.workspace.configPath,
+				});
+				listed.push({ ...current, unregistered: true });
+			}
+			return listed;
 		},
 		up: (workspace, options, emit) =>
 			bringUp(mustContext(emit), workspace, {
