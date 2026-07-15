@@ -71,8 +71,13 @@ export function runExec(
 	workspaceRoot: string,
 	command: readonly string[],
 	options: RunOptions = {},
+	config?: string,
 ): Promise<RunOutcome> {
-	return runCommand(executable, execArgv(workspaceRoot, command), options);
+	return runCommand(
+		executable,
+		execArgv(workspaceRoot, command, config),
+		options,
+	);
 }
 
 /**

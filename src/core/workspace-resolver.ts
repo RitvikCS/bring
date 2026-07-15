@@ -15,7 +15,12 @@ export type ResolveResult =
 	| { outcome: 'resolved'; workspace: WorkspaceRef }
 	| { outcome: 'not-found'; problem: BringProblem }
 	| { outcome: 'no-config'; searchedRoot: string; problem: BringProblem }
-	| { outcome: 'ambiguous'; configs: string[]; problem: BringProblem };
+	| {
+			outcome: 'ambiguous';
+			root: string;
+			configs: string[];
+			problem: BringProblem;
+	  };
 
 export interface ResolveOptions {
 	cwd: string;
@@ -91,6 +96,7 @@ export function resolveWorkspace(
 		if (found.length > 1) {
 			return {
 				outcome: 'ambiguous',
+				root: dir,
 				configs: found,
 				problem: {
 					code: 'CONFIG_AMBIGUOUS',

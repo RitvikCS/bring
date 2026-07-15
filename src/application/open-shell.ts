@@ -15,6 +15,7 @@ export async function openShell(
 	ctx: OperationContext,
 	workspace: WorkspaceRef,
 	command: readonly string[] = ['bash'],
+	config?: string,
 ): Promise<OperationResult & { childExitCode?: number }> {
 	const name = basename(workspace.rootPath);
 	const { finish, fail } = resultBuilder(ctx.emit, 'shell', workspace, name);
@@ -32,10 +33,13 @@ export async function openShell(
 		});
 	}
 
-	const run = await runExec(ctx.devcontainerExe, workspace.rootPath, command, {
-		env: ctx.env,
-		stdio: 'inherit',
-	});
+	const run = await runExec(
+		ctx.devcontainerExe,
+		workspace.rootPath,
+		command,
+		{ env: ctx.env, stdio: 'inherit' },
+		config,
+	);
 	if (run.outcome === 'spawn-failed') {
 		return fail({
 			code: 'DEPENDENCY_UNREACHABLE',

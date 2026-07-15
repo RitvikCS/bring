@@ -84,6 +84,7 @@ describe('resolveWorkspace', () => {
 		const result = resolveWorkspace('.', { cwd: root });
 		expect(result).toMatchObject({
 			outcome: 'ambiguous',
+			root,
 			problem: { code: 'CONFIG_AMBIGUOUS' },
 		});
 		if (result.outcome === 'ambiguous') {

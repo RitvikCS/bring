@@ -7,13 +7,14 @@ import { bringUp } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
+import { resolveTarget } from '../application/resolve-target.js';
 import { exitCodeForProblem } from '../core/errors.js';
 import type {
 	OperationEvent,
 	OperationResult,
 } from '../core/operation-events.js';
 import type { WorkspaceRef } from '../core/types.js';
-import { resolveWorkspace } from '../core/workspace-resolver.js';
+import type { resolveWorkspace } from '../core/workspace-resolver.js';
 import { DirectOperation } from '../direct/DirectOperation.js';
 import { formatResult, formatResultJson } from '../direct/format-result.js';
 import { clearLogs, readLatestLog } from '../stores/log-store.js';
@@ -34,14 +35,23 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	const cwd = process.cwd();
 	const isTTY = process.stdout.isTTY === true;
 	const json = route.options.json;
-	const color = isTTY && env['NO_COLOR'] === undefined && !json;
+	const color = isTTY && env.NO_COLOR === undefined && !json;
 
-	const resolved = resolveWorkspace(route.target, {
-		cwd,
-		explicitConfig: route.options.config,
-	});
+	const { result: resolved, usedRememberedConfig } = resolveTarget(
+		route.target,
+		{
+			cwd,
+			explicitConfig: route.options.config,
+			stateFile: stateFilePath(env),
+		},
+	);
 	if (resolved.outcome !== 'resolved') {
 		return reportResolutionFailure(resolved, json);
+	}
+	if (usedRememberedConfig !== undefined && !json) {
+		console.error(
+			`Using ${usedRememberedConfig} (remembered from your last --config choice; pass --config to override).`,
+		);
 	}
 	const workspace = resolved.workspace;
 	const stateDir = bringStateDir(env);
@@ -51,8 +61,8 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		return runLogs(stateDir, workspace, route.options.clear);
 	}
 
-	const devcontainerExe = findExecutable('devcontainer', env['PATH']);
-	const dockerExe = findExecutable('docker', env['PATH']);
+	const devcontainerExe = findExecutable('devcontainer', env.PATH);
+	const dockerExe = findExecutable('docker', env.PATH);
 	if (devcontainerExe === null || dockerExe === null) {
 		const missing =
 			devcontainerExe === null ? 'the Dev Containers CLI' : 'Docker';
@@ -80,6 +90,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 			ctx,
 			workspace,
 			route.options.shellCommand ?? ['bash'],
+			workspace.configPath,
 		);
 		if (result.outcome !== 'success') {
 			console.error(formatResult(result, { color }));
@@ -102,14 +113,16 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		}
 	}
 
+	// Always hand the exact resolved config to the upstream CLI: with two
+	// config locations present it would otherwise silently pick its own.
 	const mutation = route.action as 'up' | 'rebuild' | 'down' | 'remove';
 	const operation = (): Promise<OperationResult> => {
 		switch (mutation) {
 			case 'up':
-				return bringUp(ctx, workspace, { config: route.options.config });
+				return bringUp(ctx, workspace, { config: workspace.configPath });
 			case 'rebuild':
 				return bringUp(ctx, workspace, {
-					config: route.options.config,
+					config: workspace.configPath,
 					rebuild: true,
 					noCache: route.options.noCache,
 				});
@@ -209,7 +222,12 @@ function reportResolutionFailure(
 		for (const config of resolved.configs) {
 			console.error(`  ${config}`);
 		}
-		console.error('\nPick one explicitly with --config <path>.');
+		console.error(
+			'\nPick one explicitly with --config <path> — after the next successful',
+		);
+		console.error(
+			'`bring up --config …`, Bring remembers your choice for this project.',
+		);
 	} else {
 		console.error(resolved.problem.summary);
 	}
