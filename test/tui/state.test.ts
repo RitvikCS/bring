@@ -239,6 +239,40 @@ describe('modals never bypass confirmation', () => {
 		expect(after.workspaces).toEqual(before.workspaces);
 		expect(after.operation).toBeNull();
 	});
+
+	it('container removal opens a modal and resource operations report status', () => {
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: {
+				containers: [makeContainer('dev')],
+				images: [],
+				refreshedAt: '',
+			},
+		});
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'open-confirm-container-remove' });
+		expect(state.modal).toEqual({
+			kind: 'confirm-container-remove',
+			containerId: 'container-dev',
+		});
+		state = reduce(state, {
+			type: 'resource-operation-started',
+			kind: 'remove-container',
+			resourceId: 'container-dev',
+			resourceName: 'dev',
+		});
+		expect(state.modal).toBeNull();
+		expect(state.resourceOperation?.kind).toBe('remove-container');
+		expect(state.statusMessage).toBe('Removing dev…');
+		state = reduce(state, {
+			type: 'resource-operation-completed',
+			ok: true,
+			message: 'dev removed',
+		});
+		expect(state.resourceOperation).toBeNull();
+		expect(state.statusMessage).toBe('✓ dev removed');
+	});
 });
 
 describe('relativeTime', () => {

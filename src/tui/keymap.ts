@@ -20,7 +20,12 @@ export interface KeyInfo {
 /** The parts of the UI situation that change what a key means. */
 export interface KeyContext {
 	phase: 'loading' | 'doctor-blocked' | 'ready';
-	modal: 'help' | 'confirm-remove' | 'confirm-rebuild' | null;
+	modal:
+		| 'help'
+		| 'confirm-remove'
+		| 'confirm-rebuild'
+		| 'confirm-container-remove'
+		| null;
 	logViewOpen: boolean;
 	operationRunning: boolean;
 	/** An operation pane is showing a settled result awaiting dismissal. */
@@ -75,7 +80,8 @@ export function keyToCommand(
 	}
 	if (
 		context.modal === 'confirm-remove' ||
-		context.modal === 'confirm-rebuild'
+		context.modal === 'confirm-rebuild' ||
+		context.modal === 'confirm-container-remove'
 	) {
 		if (key.return === true) {
 			return { kind: 'confirm-modal' };

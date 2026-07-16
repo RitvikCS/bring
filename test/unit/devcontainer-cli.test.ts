@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	containerExecArgv,
 	detectUpFlags,
 	execArgv,
 	parseUpResult,
@@ -46,6 +47,16 @@ describe('argv builders', () => {
 			'bash',
 			'-c',
 			'echo $(hostname)',
+		]);
+	});
+
+	it('builds exact-container exec argv without shell interpolation', () => {
+		expect(containerExecArgv('abc 123', ['bash', '-l'])).toEqual([
+			'exec',
+			'--container-id',
+			'abc 123',
+			'bash',
+			'-l',
 		]);
 	});
 

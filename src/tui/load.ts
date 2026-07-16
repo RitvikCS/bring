@@ -3,6 +3,11 @@ import { basename } from 'node:path';
 import { findExecutable } from '../adapters/find-executable.js';
 import { bringDown } from '../application/bring-down.js';
 import { bringUp } from '../application/bring-up.js';
+import {
+	type ContainerActionResult,
+	mutateContainer,
+	openContainerShell,
+} from '../application/container-actions.js';
 import type { OperationContext } from '../application/context.js';
 import { type DoctorReport, runDoctor } from '../application/doctor.js';
 import {
@@ -13,7 +18,10 @@ import { openShell } from '../application/open-shell.js';
 import { resolveTarget } from '../application/resolve-target.js';
 import type { BringProblem } from '../core/errors.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
-import type { ResourceInventory } from '../core/resources.js';
+import type {
+	DevContainerResource,
+	ResourceInventory,
+} from '../core/resources.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
 import { readLatestLog, readLogTail } from '../stores/log-store.js';
@@ -41,6 +49,13 @@ export interface TuiEnvironment {
 	): Promise<OperationResult>;
 	/** Runs while the terminal is suspended — inherited stdio (§13.4). */
 	shell(workspace: WorkspaceRef): Promise<OperationResult>;
+	containerShell(
+		container: DevContainerResource,
+	): Promise<ContainerActionResult>;
+	mutateContainer(
+		container: DevContainerResource,
+		action: 'stop' | 'remove',
+	): Promise<ContainerActionResult>;
 	readLog(workspace: WorkspaceRef): string | null;
 }
 
@@ -137,6 +152,17 @@ export function realEnvironment(
 				workspace,
 				['bash'],
 				workspace.configPath,
+			),
+		containerShell: (container) =>
+			openContainerShell(
+				mustContext(() => {}),
+				container,
+			),
+		mutateContainer: (container, action) =>
+			mutateContainer(
+				mustContext(() => {}),
+				container,
+				action,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
 	};

@@ -55,7 +55,14 @@ export interface TuiWorkspace {
 export type Modal =
 	| { kind: 'help' }
 	| { kind: 'confirm-remove'; workspacePath: string }
-	| { kind: 'confirm-rebuild'; workspacePath: string };
+	| { kind: 'confirm-rebuild'; workspacePath: string }
+	| { kind: 'confirm-container-remove'; containerId: string };
+
+export interface ResourceOperation {
+	kind: 'stop-container' | 'remove-container';
+	resourceId: string;
+	resourceName: string;
+}
 
 export interface OperationProgress {
 	operation: OperationKind;
@@ -96,6 +103,7 @@ export interface TuiState {
 	modal: Modal | null;
 	logView: LogViewState | null;
 	operation: OperationProgress | null;
+	resourceOperation: ResourceOperation | null;
 	/** Bottom-left status line ("✓ ml-platform ready in 8.4s"). */
 	statusMessage: string;
 	/** The user-wide dotfiles default (A6), shown in the detail pane. */
@@ -118,6 +126,7 @@ export const INITIAL_STATE: TuiState = {
 	modal: null,
 	logView: null,
 	operation: null,
+	resourceOperation: null,
 	statusMessage: 'Checking your setup…',
 	dotfilesRepository: null,
 };
@@ -147,7 +156,15 @@ export type TuiAction =
 	| { type: 'open-help' }
 	| { type: 'open-confirm-remove' }
 	| { type: 'open-confirm-rebuild' }
+	| { type: 'open-confirm-container-remove' }
 	| { type: 'close-modal' }
+	| {
+			type: 'resource-operation-started';
+			kind: ResourceOperation['kind'];
+			resourceId: string;
+			resourceName: string;
+	  }
+	| { type: 'resource-operation-completed'; ok: boolean; message: string }
 	| {
 			type: 'operation-started';
 			operation: OperationKind;
@@ -386,8 +403,40 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				},
 			};
 		}
+		case 'open-confirm-container-remove': {
+			const selected = selectedContainer(state);
+			if (selected === null) {
+				return state;
+			}
+			return {
+				...state,
+				modal: {
+					kind: 'confirm-container-remove',
+					containerId: selected.id,
+				},
+			};
+		}
 		case 'close-modal':
 			return { ...state, modal: null };
+		case 'resource-operation-started':
+			return {
+				...state,
+				modal: null,
+				resourceOperation: {
+					kind: action.kind,
+					resourceId: action.resourceId,
+					resourceName: action.resourceName,
+				},
+				statusMessage: `${
+					action.kind === 'stop-container' ? 'Stopping' : 'Removing'
+				} ${action.resourceName}…`,
+			};
+		case 'resource-operation-completed':
+			return {
+				...state,
+				resourceOperation: null,
+				statusMessage: `${action.ok ? '✓' : '✗'} ${action.message}`,
+			};
 		case 'operation-started':
 			return {
 				...state,

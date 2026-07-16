@@ -176,6 +176,20 @@ describe('keymap: modals', () => {
 			kind: 'close-modal',
 		});
 	});
+
+	it('container removal confirmation also requires Enter', () => {
+		const confirm: KeyContext = {
+			...READY,
+			modal: 'confirm-container-remove',
+		};
+		expect(keyToCommand('x', key(), confirm)).toBeNull();
+		expect(keyToCommand('', key({ return: true }), confirm)).toEqual({
+			kind: 'confirm-modal',
+		});
+		expect(keyToCommand('', key({ escape: true }), confirm)).toEqual({
+			kind: 'close-modal',
+		});
+	});
 });
 
 describe('keymap: log view', () => {

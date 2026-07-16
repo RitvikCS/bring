@@ -52,6 +52,8 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 		up: () => Promise.reject(new Error('not in this test')),
 		down: () => Promise.reject(new Error('not in this test')),
 		shell: () => Promise.reject(new Error('not in this test')),
+		containerShell: () => Promise.reject(new Error('not in this test')),
+		mutateContainer: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
 		...overrides,
 	};
@@ -329,6 +331,28 @@ describe('modals (P1-40)', () => {
 		expect(frame).toContain('Source files are not touched.');
 		expect(frame).toContain('[Enter] Remove');
 		expect(frame).toContain('[Esc] Cancel');
+	});
+
+	it('container removal names the exact resource and preservation boundary', () => {
+		const state = stateFrom([
+			{
+				type: 'loaded',
+				workspaces: [],
+				resources: {
+					containers: [makeContainer('project-dev')],
+					images: [],
+					refreshedAt: '',
+				},
+			},
+			{ type: 'move-section', delta: 1 },
+			{ type: 'open-confirm-container-remove' },
+		]);
+		const frame = view(state);
+		expect(frame).toContain('Remove project-dev?');
+		expect(frame).toContain(
+			'Images, volumes, and source files are not touched.',
+		);
+		expect(frame).toContain('[Enter] Remove');
 	});
 });
 

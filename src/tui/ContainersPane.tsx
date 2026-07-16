@@ -121,10 +121,18 @@ export function ContainerDetail({
 			)}
 			<Box marginTop={1}>
 				<KeyHints
-					hints={[
-						['Enter', 'Inspect'],
-						['r', 'Refresh'],
-					]}
+					hints={
+						container.state === 'running'
+							? [
+									['e', 'Shell'],
+									['d', 'Stop'],
+									['x', 'Remove'],
+								]
+							: [
+									['x', 'Remove'],
+									['r', 'Refresh'],
+								]
+					}
 				/>
 			</Box>
 		</Box>

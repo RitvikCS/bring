@@ -21,6 +21,11 @@ follow [Semantic Versioning](https://semver.org/).
   image, age, role, service, ports, and exact container ID. The TUI now loads
   every pane from one coordinated Docker inventory instead of querying Docker
   once per remembered workspace.
+- Container actions are connected: `e` opens a shell in the exact selected
+  primary or Compose service through `devcontainer exec --container-id`, `d`
+  stops only that container, and `x` opens a confirmation before stopping and
+  removing it. Mutations share the workspace operation lock, never force
+  removal, and explicitly preserve images, volumes, and source files.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

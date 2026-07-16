@@ -26,7 +26,12 @@ import {
 	type Size,
 } from './layout.js';
 import type { TuiEnvironment } from './load.js';
-import { ConfirmRebuild, ConfirmRemove, HelpOverlay } from './modals.js';
+import {
+	ConfirmContainerRemove,
+	ConfirmRebuild,
+	ConfirmRemove,
+	HelpOverlay,
+} from './modals.js';
 import { OperationView } from './OperationView.js';
 import {
 	INITIAL_STATE,
@@ -246,6 +251,42 @@ export function App({
 		[environment, refresh],
 	);
 
+	const runContainerMutation = useCallback(
+		(
+			kind: 'stop' | 'remove',
+			container: ReturnType<typeof selectedContainer>,
+		) => {
+			if (container === null) {
+				return;
+			}
+			dispatch({
+				type: 'resource-operation-started',
+				kind: kind === 'stop' ? 'stop-container' : 'remove-container',
+				resourceId: container.id,
+				resourceName: container.name,
+			});
+			void environment
+				.mutateContainer(container, kind)
+				.catch((error) => ({
+					ok: false as const,
+					message: error instanceof Error ? error.message : String(error),
+					problem: {
+						code: 'INTERNAL_ERROR' as const,
+						summary: error instanceof Error ? error.message : String(error),
+					},
+				}))
+				.then(async (result) => {
+					dispatch({
+						type: 'resource-operation-completed',
+						ok: result.ok,
+						message: result.message,
+					});
+					await refresh('containers');
+				});
+		},
+		[environment, refresh],
+	);
+
 	const runShell = useCallback(
 		async (workspace: TuiWorkspace) => {
 			// P1-42: the shell owns the terminal until it exits; Ink restores
@@ -262,6 +303,26 @@ export function App({
 				message: `Shell in ${workspace.name} closed — back in Bring.`,
 			});
 			await refresh();
+		},
+		[environment, refresh, suspendTerminal],
+	);
+
+	const runContainerShell = useCallback(
+		async (container: NonNullable<ReturnType<typeof selectedContainer>>) => {
+			let resultMessage = `Shell in ${container.name} closed — back in Bring.`;
+			await suspendTerminal(async () => {
+				process.stdout.write(`${enteringShellLine(container.name, true)}\n`);
+				const result = await environment.containerShell(container);
+				if (!result.ok) {
+					resultMessage = result.message;
+				}
+			});
+			ignoreInputUntilRef.current = Date.now() + 400;
+			dispatch({
+				type: 'status-message',
+				message: resultMessage,
+			});
+			await refresh('containers');
 		},
 		[environment, refresh, suspendTerminal],
 	);
@@ -286,8 +347,11 @@ export function App({
 			const current = stateRef.current;
 			const wide = layoutMode(size) === 'wide';
 			const selected = selectedWorkspace(current);
+			const container = selectedContainer(current);
 			const operationRunning =
-				current.operation !== null && current.operation.result === undefined;
+				(current.operation !== null &&
+					current.operation.result === undefined) ||
+				current.resourceOperation !== null;
 			const busy = (workspace: TuiWorkspace | null) =>
 				workspace !== null &&
 				['starting', 'stopping', 'rebuilding', 'removing'].includes(
@@ -299,7 +363,10 @@ export function App({
 					if (operationRunning) {
 						dispatch({
 							type: 'status-message',
-							message: `Wait for ${current.operation?.operation} to finish (Ctrl+C aborts Bring).`,
+							message: `Wait for ${
+								current.operation?.operation ??
+								current.resourceOperation?.kind.replace('-', ' ')
+							} to finish (Ctrl+C aborts Bring).`,
 						});
 						return;
 					}
@@ -392,6 +459,12 @@ export function App({
 					runMutation('up', selected);
 					return;
 				case 'workspace-down':
+					if (current.section === 'containers') {
+						if (container !== null) {
+							runContainerMutation('stop', container);
+						}
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -422,6 +495,20 @@ export function App({
 					dispatch({ type: 'open-confirm-rebuild' });
 					return;
 				case 'open-shell':
+					if (current.section === 'containers') {
+						if (container === null) {
+							return;
+						}
+						if (container.state !== 'running') {
+							dispatch({
+								type: 'status-message',
+								message: `${container.name} is not running.`,
+							});
+							return;
+						}
+						void runContainerShell(container);
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -447,6 +534,13 @@ export function App({
 					return;
 				}
 				case 'request-remove':
+					if (current.section === 'containers') {
+						if (container !== null) {
+							modalOpenedAtRef.current = Date.now();
+							dispatch({ type: 'open-confirm-container-remove' });
+						}
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -464,7 +558,8 @@ export function App({
 					const modal = current.modal;
 					if (
 						modal?.kind !== 'confirm-remove' &&
-						modal?.kind !== 'confirm-rebuild'
+						modal?.kind !== 'confirm-rebuild' &&
+						modal?.kind !== 'confirm-container-remove'
 					) {
 						return;
 					}
@@ -472,6 +567,16 @@ export function App({
 					// Enter arriving within the modal's first instants is
 					// buffered/typed-ahead input, not a decision.
 					if (Date.now() - modalOpenedAtRef.current < 300) {
+						return;
+					}
+					if (modal.kind === 'confirm-container-remove') {
+						const target = current.containers.find(
+							(item) => item.id === modal.containerId,
+						);
+						dispatch({ type: 'close-modal' });
+						if (target !== undefined) {
+							runContainerMutation('remove', target);
+						}
 						return;
 					}
 					const target = current.workspaces.find(
@@ -510,7 +615,16 @@ export function App({
 					return;
 			}
 		},
-		[exit, size, runMutation, runShell, openLogs, refresh],
+		[
+			exit,
+			size,
+			runMutation,
+			runContainerMutation,
+			runShell,
+			runContainerShell,
+			openLogs,
+			refresh,
+		],
 	);
 
 	useInput((input, key) => {
@@ -523,7 +637,9 @@ export function App({
 			modal: current.modal?.kind ?? null,
 			logViewOpen: current.logView !== null,
 			operationRunning:
-				current.operation !== null && current.operation.result === undefined,
+				(current.operation !== null &&
+					current.operation.result === undefined) ||
+				current.resourceOperation !== null,
 			operationSettled: current.operation?.result !== undefined,
 		});
 		if (command !== null) {
@@ -613,6 +729,16 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		);
 	}
 	const modal = state.modal;
+	if (modal?.kind === 'confirm-container-remove') {
+		const target = state.containers.find(
+			(container) => container.id === modal.containerId,
+		);
+		return target === undefined ? null : (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ConfirmContainerRemove container={target} />
+			</Box>
+		);
+	}
 	if (modal?.kind === 'confirm-remove' || modal?.kind === 'confirm-rebuild') {
 		const target = state.workspaces.find(
 			(w) => w.ref.rootPath === modal.workspacePath,

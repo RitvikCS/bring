@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import type { DevContainerResource } from '../core/resources.js';
 import type { TuiWorkspace } from './state.js';
 
 // Overlays (P1-40). Ink has no z-stack, so a modal replaces the content
@@ -10,9 +11,9 @@ const HELP_ROWS: readonly [string, string][] = [
 	['j/k', 'previous/next item'],
 	['ctrl+h/l', 'focus left/right pane'],
 	['Enter', 'primary action / open detail'],
-	['u/d', 'bring workspace up/down'],
-	['r', 'rebuild confirmation (or re-check a missing config)'],
-	['e', 'open shell'],
+	['u/d', 'workspace up/down · container stop with d'],
+	['r', 'rebuild workspace / refresh resources'],
+	['e', 'open workspace or container shell'],
 	['L', 'latest log'],
 	['x', 'removal confirmation'],
 	['Esc', 'close / back'],
@@ -41,6 +42,32 @@ export function HelpOverlay() {
 			</Box>
 			<Box marginTop={1}>
 				<Text dimColor>[Esc] Close</Text>
+			</Box>
+		</Box>
+	);
+}
+
+export function ConfirmContainerRemove({
+	container,
+}: {
+	container: DevContainerResource;
+}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="red"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>Remove {container.name}?</Text>
+			<Box marginTop={1} flexDirection="column">
+				<Text>The container will be stopped, then deleted.</Text>
+				<Text>Images, volumes, and source files are not touched.</Text>
+			</Box>
+			<Box marginTop={1}>
+				<Text dimColor>[Enter] Remove [Esc] Cancel</Text>
 			</Box>
 		</Box>
 	);

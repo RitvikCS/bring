@@ -50,6 +50,13 @@ export function execArgv(
 	return [...argv, ...command];
 }
 
+export function containerExecArgv(
+	containerId: string,
+	command: readonly string[],
+): string[] {
+	return ['exec', '--container-id', containerId, ...command];
+}
+
 export function readConfigurationArgv(
 	workspaceRoot: string,
 	config?: string,
@@ -80,6 +87,19 @@ export function runExec(
 	return runCommand(
 		executable,
 		execArgv(workspaceRoot, command, config),
+		options,
+	);
+}
+
+export function runContainerExec(
+	executable: string,
+	containerId: string,
+	command: readonly string[],
+	options: RunOptions = {},
+): Promise<RunOutcome> {
+	return runCommand(
+		executable,
+		containerExecArgv(containerId, command),
 		options,
 	);
 }
