@@ -8,6 +8,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Phase 2 resource inventory foundation: Bring now identifies Dev Container
+  containers from upstream workspace labels, relates Docker Compose sidecars
+  through their project labels, and discovers images through the upstream
+  `devcontainer.metadata` label. Inventory uses exact image IDs and byte sizes,
+  records container/image/workspace impact, and never guesses from resource
+  names. Image use includes every Docker container so later cleanup cannot
+  mistake a shared image for an unused one.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

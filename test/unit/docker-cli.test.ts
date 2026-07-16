@@ -2,10 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+	listAllContainers,
+	listDevContainerImages,
 	listWorkspaceContainers,
+	parseContainerListLines,
+	parseImageListLines,
 	parsePorts,
 	parsePsLines,
 	removeContainers,
+	removeImages,
 	stopContainers,
 } from '../../src/adapters/docker-cli.js';
 import { makeBinDir, writeFakeBin } from '../helpers/fake-bin.js';
@@ -45,6 +50,27 @@ describe('parsePorts', () => {
 	});
 });
 
+describe('resource inventory parsing', () => {
+	it('parses the stable fields from container and image list rows', () => {
+		expect(parseContainerListLines(PS_LINE)).toEqual([
+			{
+				id: 'abc123',
+				name: 'vsc-proj-x',
+				state: 'running',
+				statusText: 'Up 2 hours',
+				createdAt: '',
+				imageName: 'vsc-proj-uid',
+				ports: [{ containerPort: 80, hostPort: 8080 }],
+			},
+		]);
+		expect(
+			parseImageListLines(
+				'{"ID":"sha256:one","Repository":"vsc-proj","Tag":"latest"}\nwarning',
+			),
+		).toEqual([{ id: 'sha256:one' }]);
+	});
+});
+
 describe('docker adapter commands', () => {
 	function recordingDocker(dir: string, extra = 'exit 0'): string {
 		return writeFakeBin(
@@ -74,6 +100,77 @@ describe('docker adapter commands', () => {
 		expect(readFileSync(join(dir, 'argv'), 'utf8')).toBe('stop\na1\nb2\n');
 		await removeContainers(bin, ['a1']);
 		expect(readFileSync(join(dir, 'argv'), 'utf8')).toBe('rm\na1\n');
+		await removeImages(bin, ['sha256:i1', 'sha256:i2']);
+		expect(readFileSync(join(dir, 'argv'), 'utf8')).toBe(
+			'image\nrm\nsha256:i1\nsha256:i2\n',
+		);
+	});
+
+	it('inspects all containers for exact labels and image ids', async () => {
+		const dir = makeBinDir();
+		const bin = writeFakeBin(
+			dir,
+			'docker',
+			`case "$1 $2" in
+				"ps --all") echo '${PS_LINE}' ;;
+				"container inspect") echo '[{"Id":"abc123","Name":"/vsc-proj-x","Created":"2026-07-16T12:00:00Z","Image":"sha256:image","Config":{"Image":"vsc-proj-uid","Labels":{"devcontainer.local_folder":"/work/proj"}}}]' ;;
+			esac`,
+		);
+		const result = await listAllContainers(bin);
+		expect(result).toEqual({
+			ok: true,
+			value: [
+				{
+					id: 'abc123',
+					name: 'vsc-proj-x',
+					state: 'running',
+					statusText: 'Up 2 hours',
+					createdAt: '2026-07-16T12:00:00Z',
+					imageId: 'sha256:image',
+					imageName: 'vsc-proj-uid',
+					ports: [{ containerPort: 80, hostPort: 8080 }],
+					labels: { 'devcontainer.local_folder': '/work/proj' },
+				},
+			],
+		});
+	});
+
+	it('lists metadata-labelled images plus additional container images', async () => {
+		const dir = makeBinDir();
+		const bin = writeFakeBin(
+			dir,
+			'docker',
+			`case "$1 $2" in
+				"image ls")
+					echo '{"ID":"sha256:meta","Repository":"vsc-proj","Tag":"latest"}'
+					;;
+				"image inspect")
+					echo '[{"Id":"sha256:meta","Created":"2026-07-16T12:00:00Z","RepoTags":["vsc-proj:latest"],"Size":1200},{"Id":"sha256:used","Created":"2026-07-15T12:00:00Z","RepoTags":null,"Size":800}]'
+					;;
+			esac`,
+		);
+		const result = await listDevContainerImages(bin, ['sha256:used']);
+		expect(result).toEqual({
+			ok: true,
+			value: [
+				{
+					id: 'sha256:meta',
+					references: ['vsc-proj:latest'],
+					displayName: 'vsc-proj:latest',
+					createdAt: '2026-07-16T12:00:00Z',
+					sizeBytes: 1200,
+					dangling: false,
+				},
+				{
+					id: 'sha256:used',
+					references: [],
+					displayName: '<none>:<none>',
+					createdAt: '2026-07-15T12:00:00Z',
+					sizeBytes: 800,
+					dangling: true,
+				},
+			],
+		});
 	});
 
 	it('surfaces stderr when docker fails', async () => {
