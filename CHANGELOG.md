@@ -92,6 +92,11 @@ that introduced it.
   reports): it was colored ANSI gray/bright-black, which is invisible on
   dark or transparent terminal themes. Unfocused borders now dim the
   default foreground color, which is visible on any theme.
+- The frame's right border could still vanish in floating windows whose
+  pixel width is not an exact multiple of the cell width — the terminal
+  leaves a partial, never-rendered final column (ghostty; fullscreen
+  snaps to exact multiples, which is why it "came back" there). The TUI
+  now reserves the last column and never draws into it.
 - The detail pane's log tail no longer shows bare `[timestamp]` lines or
   the trailing `{"outcome":…}` result JSON — it skips to the last lines
   that say what actually happened.

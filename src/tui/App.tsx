@@ -58,7 +58,14 @@ export function App({
 }: AppProps) {
 	const { exit, suspendTerminal } = useApp();
 	const windowSize = useWindowSize();
-	const size = sizeOverride ?? windowSize;
+	// Reserve the terminal's last column: when a floating window's width is
+	// not an exact multiple of the cell width, some terminals (ghostty)
+	// leave a partial final column that never renders — drawing into it
+	// made the frame's right border invisible at those sizes.
+	const size = sizeOverride ?? {
+		columns: Math.max(windowSize.columns - 1, 1),
+		rows: windowSize.rows,
+	};
 	const [state, dispatch] = useReducer(reduce, {
 		...INITIAL_STATE,
 		section: initialSection ?? 'workspaces',
