@@ -33,6 +33,10 @@ export interface TuiWorkspace {
 	containerIds: string[];
 	imageNames: string[];
 	forwardedPorts: ForwardedPort[];
+	/** Docker's human container age ("Up 2 hours"), when a container exists. */
+	uptimeText?: string;
+	/** Tail of the latest operation log, sanitized, newest last. */
+	logTail?: string[];
 	/** Set after a failed operation this session (spec §13.5). */
 	problem?: BringProblem;
 	/**
@@ -45,7 +49,8 @@ export interface TuiWorkspace {
 
 export type Modal =
 	| { kind: 'help' }
-	| { kind: 'confirm-remove'; workspacePath: string };
+	| { kind: 'confirm-remove'; workspacePath: string }
+	| { kind: 'confirm-rebuild'; workspacePath: string };
 
 export interface OperationProgress {
 	operation: OperationKind;
@@ -122,6 +127,7 @@ export type TuiAction =
 	| { type: 'back' }
 	| { type: 'open-help' }
 	| { type: 'open-confirm-remove' }
+	| { type: 'open-confirm-rebuild' }
 	| { type: 'close-modal' }
 	| {
 			type: 'operation-started';
@@ -273,6 +279,19 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				modal: { kind: 'confirm-remove', workspacePath: selected.ref.rootPath },
 			};
 		}
+		case 'open-confirm-rebuild': {
+			const selected = selectedWorkspace(state);
+			if (selected === null) {
+				return state;
+			}
+			return {
+				...state,
+				modal: {
+					kind: 'confirm-rebuild',
+					workspacePath: selected.ref.rootPath,
+				},
+			};
+		}
 		case 'close-modal':
 			return { ...state, modal: null };
 		case 'operation-started':
@@ -358,11 +377,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 					lines: action.content
 						.replace(/\n$/, '')
 						.split('\n')
-						.map((line) =>
-							stripControlCharacters(
-								line.replace(/\t/g, '  ').replace(CSI_SEQUENCE, ''),
-							),
-						),
+						.map(sanitizeLogLine),
 					scroll: 0,
 				},
 			};
@@ -389,6 +404,13 @@ const CSI_SEQUENCE = new RegExp(
 	'g',
 );
 
+/** One log line made safe for a terminal cell grid: no ANSI, tabs, or C0s. */
+export function sanitizeLogLine(line: string): string {
+	return stripControlCharacters(
+		line.replace(/\t/g, '  ').replace(CSI_SEQUENCE, ''),
+	);
+}
+
 function lastSafeLine(chunk: string): string | null {
 	const lines = chunk
 		.split(/\r?\n/)
@@ -408,6 +430,31 @@ function stripControlCharacters(line: string): string {
 		}
 	}
 	return out;
+}
+
+/** "3 minutes ago"-style rendering of an ISO timestamp; null if unusable. */
+export function relativeTime(iso: string, nowMs: number): string | null {
+	const then = Date.parse(iso);
+	if (Number.isNaN(then)) {
+		return null;
+	}
+	const seconds = Math.max(Math.round((nowMs - then) / 1000), 0);
+	if (seconds < 60) {
+		return 'just now';
+	}
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) {
+		return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+	}
+	const hours = Math.round(minutes / 60);
+	if (hours < 24) {
+		return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+	}
+	const days = Math.round(hours / 24);
+	if (days < 30) {
+		return `${days} day${days === 1 ? '' : 's'} ago`;
+	}
+	return new Date(then).toISOString().slice(0, 10);
 }
 
 export function formatDuration(ms: number): string {

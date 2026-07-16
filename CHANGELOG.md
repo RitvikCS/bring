@@ -38,6 +38,15 @@ that introduced it.
 
 ### Changed
 
+- `r` (rebuild) in the TUI now asks for confirmation, exactly like remove:
+  a rebuild deletes the container and rebuilds it from scratch, which is too
+  expensive an action for a stray keystroke. All other action keys stay
+  single-press — an accidental `u` is a no-op, `d` is undone by one `u`,
+  and a shell is one Ctrl-D away.
+- The workspace detail pane now shows what you would otherwise run commands
+  for: the container's age straight from Docker ("Up 2 hours" /
+  "Exited (0) 3 days ago"), when the workspace was last used, and the tail
+  of the latest operation log (with `L` still opening the full view).
 - First hand-testing polish round for the TUI and direct output: the list
   pane no longer changes width between states (long values truncate instead
   of squeezing the layout), the TUI refreshes every 3 seconds while idle so
@@ -49,6 +58,10 @@ that introduced it.
 
 ### Fixed
 
+- `Ctrl+H` (focus the list pane) never worked: terminals send Ctrl+H as the
+  ASCII backspace character, so it arrived as a backspace keypress with the
+  ctrl flag unset and the binding never fired. Backspace now focuses the
+  list pane, which makes Ctrl+H work everywhere (`Ctrl+L` was unaffected).
 - Leaving a long shell session whose last in-container command had failed
   with 126/127 (e.g. a typo'd command right before `exit`) was misreported
   as "`bash` is not available" — the missing-command hint now only applies

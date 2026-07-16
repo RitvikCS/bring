@@ -130,6 +130,22 @@ describe('detail variants (§12.1, §12.3)', () => {
 		expect(frame).toContain('fresh (this folder)');
 	});
 
+	it('shows container age, last-used time, and a log tail when known', () => {
+		const workspace: TuiWorkspace = {
+			...makeWorkspace('ml', 'running'),
+			uptimeText: 'Up 2 hours',
+			lastUsedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+			logTail: ['Step 5/9 : RUN pip install', 'done.'],
+		};
+		const frame = view(ready([workspace]));
+		expect(frame).toContain('Container');
+		expect(frame).toContain('Up 2 hours');
+		expect(frame).toContain('Last used');
+		expect(frame).toContain('3 minutes ago');
+		expect(frame).toContain('Latest log');
+		expect(frame).toContain('Step 5/9 : RUN pip install');
+	});
+
 	it('shows the remembered dotfiles default when one is set (A6)', () => {
 		const state = stateFrom([
 			{
@@ -237,6 +253,19 @@ describe('modals (P1-40)', () => {
 		);
 		expect(frame).toContain('Keyboard help');
 		expect(frame).toContain('removal confirmation');
+	});
+
+	it('rebuild confirmation warns about the cost before anything runs', () => {
+		const frame = view(
+			stateFrom(
+				[{ type: 'open-confirm-rebuild' }],
+				ready([makeWorkspace('a', 'running')]),
+			),
+		);
+		expect(frame).toContain('Rebuild a?');
+		expect(frame).toContain('deleted and rebuilt');
+		expect(frame).toContain('[Enter] Rebuild');
+		expect(frame).toContain('[Esc] Cancel');
 	});
 
 	it('remove confirmation states that source files stay', () => {

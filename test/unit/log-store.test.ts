@@ -6,6 +6,7 @@ import {
 	clearLogs,
 	logDirFor,
 	readLatestLog,
+	readLogTail,
 	writeOperationLog,
 } from '../../src/stores/log-store.js';
 
@@ -42,6 +43,18 @@ describe('log store', () => {
 		const path = writeOperationLog(stateDir, IDENTITY, 'secret build output');
 		expect(statSync(path).mode & 0o777).toBe(0o600);
 		expect(statSync(logDirFor(stateDir, IDENTITY)).mode & 0o777).toBe(0o700);
+	});
+
+	it('tails the last non-empty lines without reading the whole file', () => {
+		const stateDir = tempStateDir();
+		const big = `${'x'.repeat(10_000)}\none\n\ntwo\nthree\n`;
+		writeOperationLog(stateDir, IDENTITY, big);
+		expect(readLogTail(stateDir, IDENTITY, 3)).toEqual(['one', 'two', 'three']);
+		expect(readLogTail(stateDir, IDENTITY, 2)).toEqual(['two', 'three']);
+	});
+
+	it('tails to an empty list when no log exists', () => {
+		expect(readLogTail(tempStateDir(), IDENTITY, 3)).toEqual([]);
 	});
 
 	it('clears logs idempotently', () => {

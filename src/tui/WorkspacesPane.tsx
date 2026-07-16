@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import type { WorkspaceStatus } from '../core/types.js';
 import { KeyHints } from './KeyHints.js';
 import {
+	relativeTime,
 	statusColor,
 	statusLabel,
 	statusSymbol,
@@ -102,6 +103,16 @@ export function WorkspaceDetail({
 						{statusSymbol(workspace.status)} {statusLabel(workspace.status)}
 					</Text>
 				</DetailRow>
+				{workspace.uptimeText !== undefined && (
+					<DetailRow label="Container">
+						<Text wrap="truncate">{workspace.uptimeText}</Text>
+					</DetailRow>
+				)}
+				{lastUsed(workspace) !== null && (
+					<DetailRow label="Last used">
+						<Text wrap="truncate">{lastUsed(workspace)}</Text>
+					</DetailRow>
+				)}
 				{workspace.containerIds.length > 0 && (
 					<DetailRow label="Containers">
 						<Text wrap="truncate">{workspace.containerIds.join(', ')}</Text>
@@ -153,6 +164,23 @@ export function WorkspaceDetail({
 					))}
 				</Box>
 			)}
+			{workspace.logTail !== undefined && workspace.logTail.length > 0 && (
+				<Box marginTop={1} flexDirection="column">
+					<Text bold>
+						Latest log <Text dimColor>(L for all)</Text>
+					</Text>
+					{workspace.logTail.map((line, index) => (
+						<Text
+							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-size tail, order is identity
+							key={index}
+							dimColor
+							wrap="truncate"
+						>
+							{line}
+						</Text>
+					))}
+				</Box>
+			)}
 			<Box marginTop={1}>
 				<KeyHints hints={actionHints(workspace.status)} />
 			</Box>
@@ -183,6 +211,12 @@ function MissingConfigDetail({ workspace }: { workspace: TuiWorkspace }) {
 			</Box>
 		</Box>
 	);
+}
+
+function lastUsed(workspace: TuiWorkspace): string | null {
+	return workspace.lastUsedAt === ''
+		? null
+		: relativeTime(workspace.lastUsedAt, Date.now());
 }
 
 function DetailRow({

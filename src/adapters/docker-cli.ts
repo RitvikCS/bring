@@ -84,6 +84,7 @@ export function parsePsLines(stdout: string): ContainerInfo[] {
 				id: row.ID ?? '',
 				name: row.Names ?? '',
 				state: row.State ?? 'unknown',
+				statusText: row.Status ?? '',
 				image: row.Image ?? '',
 				ports: parsePorts(row.Ports ?? ''),
 			});

@@ -1,7 +1,11 @@
 import {
+	closeSync,
 	existsSync,
+	fstatSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
+	readSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -47,6 +51,37 @@ export function readLatestLog(
 		return readFileSync(latestLogPath(stateDir, identity), 'utf8');
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * The last non-empty lines of the latest log, reading only the file's tail —
+ * build logs can be large and this is polled by the TUI's idle refresh.
+ */
+export function readLogTail(
+	stateDir: string,
+	identity: string,
+	maxLines: number,
+): string[] {
+	let fd: number;
+	try {
+		fd = openSync(latestLogPath(stateDir, identity), 'r');
+	} catch {
+		return [];
+	}
+	try {
+		const size = fstatSync(fd).size;
+		const span = Math.min(size, 4096);
+		const buffer = Buffer.alloc(span);
+		readSync(fd, buffer, 0, span, size - span);
+		return buffer
+			.toString('utf8')
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0)
+			.slice(-maxLines);
+	} finally {
+		closeSync(fd);
 	}
 }
 

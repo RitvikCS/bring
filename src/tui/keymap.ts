@@ -14,12 +14,13 @@ export interface KeyInfo {
 	shift?: boolean;
 	pageUp?: boolean;
 	pageDown?: boolean;
+	backspace?: boolean;
 }
 
 /** The parts of the UI situation that change what a key means. */
 export interface KeyContext {
 	phase: 'loading' | 'doctor-blocked' | 'ready';
-	modal: 'help' | 'confirm-remove' | null;
+	modal: 'help' | 'confirm-remove' | 'confirm-rebuild' | null;
 	logViewOpen: boolean;
 	operationRunning: boolean;
 	/** An operation pane is showing a settled result awaiting dismissal. */
@@ -72,7 +73,10 @@ export function keyToCommand(
 			? { kind: 'close-modal' }
 			: null;
 	}
-	if (context.modal === 'confirm-remove') {
+	if (
+		context.modal === 'confirm-remove' ||
+		context.modal === 'confirm-rebuild'
+	) {
 		if (key.return === true) {
 			return { kind: 'confirm-modal' };
 		}
@@ -133,7 +137,9 @@ export function keyToCommand(
 	if (input === 'k' || key.upArrow === true) {
 		return { kind: 'move-selection', delta: -1 };
 	}
-	if (key.ctrl === true && input === 'h') {
+	// Ctrl+H is ASCII backspace (0x08): terminals deliver it as a backspace
+	// keypress with ctrl unset, so the backspace flag IS the Ctrl+H binding.
+	if ((key.ctrl === true && input === 'h') || key.backspace === true) {
 		return { kind: 'focus-pane', pane: 'list' };
 	}
 	if (key.ctrl === true && input === 'l') {

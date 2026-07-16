@@ -33,6 +33,7 @@ export async function getSnapshot(
 	}
 	const containers = listed.value;
 	const running = containers.filter((c) => c.state === 'running');
+	const primary = running[0] ?? containers[0];
 	return {
 		ok: true,
 		snapshot: {
@@ -47,6 +48,10 @@ export async function getSnapshot(
 			containerIds: containers.map((c) => c.id),
 			imageNames: [...new Set(containers.map((c) => c.image))],
 			forwardedPorts: running.flatMap((c) => c.ports),
+			uptimeText:
+				primary !== undefined && primary.statusText !== ''
+					? primary.statusText
+					: undefined,
 		},
 	};
 }

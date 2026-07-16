@@ -68,6 +68,13 @@ describe('keymap: ready screen', () => {
 		});
 	});
 
+	it('treats backspace as ctrl+h — terminals send 0x08 with ctrl unset', () => {
+		expect(keyToCommand('', key({ backspace: true }), READY)).toEqual({
+			kind: 'focus-pane',
+			pane: 'list',
+		});
+	});
+
 	it('maps the §11.3 action keys', () => {
 		expect(keyToCommand('u', key(), READY)).toEqual({ kind: 'workspace-up' });
 		expect(keyToCommand('d', key(), READY)).toEqual({ kind: 'workspace-down' });
@@ -157,6 +164,17 @@ describe('keymap: modals', () => {
 			kind: 'close-modal',
 		});
 		expect(keyToCommand('n', key(), confirm)).toEqual({ kind: 'close-modal' });
+	});
+
+	it('confirm-rebuild behaves like confirm-remove — r never rebuilds directly', () => {
+		const confirm: KeyContext = { ...READY, modal: 'confirm-rebuild' };
+		expect(keyToCommand('r', key(), confirm)).toBeNull();
+		expect(keyToCommand('', key({ return: true }), confirm)).toEqual({
+			kind: 'confirm-modal',
+		});
+		expect(keyToCommand('', key({ escape: true }), confirm)).toEqual({
+			kind: 'close-modal',
+		});
 	});
 });
 

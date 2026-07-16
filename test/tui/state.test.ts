@@ -4,6 +4,7 @@ import {
 	INITIAL_STATE,
 	orderWorkspaces,
 	reduce,
+	relativeTime,
 	selectedWorkspace,
 	statusSymbol,
 	type TuiState,
@@ -195,6 +196,29 @@ describe('modals never bypass confirmation', () => {
 		});
 		expect(after.workspaces).toEqual(before.workspaces);
 		expect(after.operation).toBeNull();
+	});
+
+	it('open-confirm-rebuild only opens a modal — nothing is mutated', () => {
+		const before = readyState([makeWorkspace('a', 'running')]);
+		const after = reduce(before, { type: 'open-confirm-rebuild' });
+		expect(after.modal).toEqual({
+			kind: 'confirm-rebuild',
+			workspacePath: '/home/user/a',
+		});
+		expect(after.workspaces).toEqual(before.workspaces);
+		expect(after.operation).toBeNull();
+	});
+});
+
+describe('relativeTime', () => {
+	const now = Date.parse('2026-07-16T12:00:00.000Z');
+	it('renders human distances and falls back to a date', () => {
+		expect(relativeTime('2026-07-16T11:59:30.000Z', now)).toBe('just now');
+		expect(relativeTime('2026-07-16T11:57:00.000Z', now)).toBe('3 minutes ago');
+		expect(relativeTime('2026-07-16T07:00:00.000Z', now)).toBe('5 hours ago');
+		expect(relativeTime('2026-07-14T12:00:00.000Z', now)).toBe('2 days ago');
+		expect(relativeTime('2026-01-01T00:00:00.000Z', now)).toBe('2026-01-01');
+		expect(relativeTime('not a date', now)).toBeNull();
 	});
 });
 

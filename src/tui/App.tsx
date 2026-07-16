@@ -25,7 +25,7 @@ import {
 	type Size,
 } from './layout.js';
 import type { TuiEnvironment } from './load.js';
-import { ConfirmRemove, HelpOverlay } from './modals.js';
+import { ConfirmRebuild, ConfirmRemove, HelpOverlay } from './modals.js';
 import { OperationView } from './OperationView.js';
 import {
 	INITIAL_STATE,
@@ -324,7 +324,9 @@ export function App({
 					if (selected === null || busy(selected)) {
 						return;
 					}
-					runMutation('rebuild', selected);
+					// Rebuild deletes the container and rebuilds from scratch —
+					// too expensive for a stray keystroke, so it confirms first.
+					dispatch({ type: 'open-confirm-rebuild' });
 					return;
 				case 'open-shell':
 					if (selected === null || busy(selected)) {
@@ -366,7 +368,10 @@ export function App({
 					return;
 				case 'confirm-modal': {
 					const modal = current.modal;
-					if (modal?.kind !== 'confirm-remove') {
+					if (
+						modal?.kind !== 'confirm-remove' &&
+						modal?.kind !== 'confirm-rebuild'
+					) {
 						return;
 					}
 					const target = current.workspaces.find(
@@ -374,7 +379,10 @@ export function App({
 					);
 					dispatch({ type: 'close-modal' });
 					if (target !== undefined) {
-						runMutation('remove', target);
+						runMutation(
+							modal.kind === 'confirm-remove' ? 'remove' : 'rebuild',
+							target,
+						);
 					}
 					return;
 				}
@@ -502,13 +510,17 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		);
 	}
 	const modal = state.modal;
-	if (modal?.kind === 'confirm-remove') {
+	if (modal?.kind === 'confirm-remove' || modal?.kind === 'confirm-rebuild') {
 		const target = state.workspaces.find(
 			(w) => w.ref.rootPath === modal.workspacePath,
 		);
 		return target === undefined ? null : (
 			<Box flexGrow={1} justifyContent="center" alignItems="center">
-				<ConfirmRemove workspace={target} />
+				{modal.kind === 'confirm-remove' ? (
+					<ConfirmRemove workspace={target} />
+				) : (
+					<ConfirmRebuild workspace={target} />
+				)}
 			</Box>
 		);
 	}

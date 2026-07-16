@@ -34,6 +34,8 @@ export interface ContainerInfo {
 	id: string;
 	name: string;
 	state: string;
+	/** Docker's human status, e.g. "Up 2 hours" / "Exited (0) 3 days ago". */
+	statusText: string;
 	image: string;
 	ports: ForwardedPort[];
 }
@@ -45,4 +47,6 @@ export interface WorkspaceSnapshot {
 	containerIds: string[];
 	imageNames: string[];
 	forwardedPorts: ForwardedPort[];
+	/** Human age of the primary container ("Up 2 hours"), when one exists. */
+	uptimeText?: string;
 }

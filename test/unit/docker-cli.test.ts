@@ -11,7 +11,7 @@ import {
 import { makeBinDir, writeFakeBin } from '../helpers/fake-bin.js';
 
 const PS_LINE =
-	'{"ID":"abc123","Names":"vsc-proj-x","State":"running","Image":"vsc-proj-uid","Ports":"0.0.0.0:8080->80/tcp, :::8080->80/tcp"}';
+	'{"ID":"abc123","Names":"vsc-proj-x","State":"running","Status":"Up 2 hours","Image":"vsc-proj-uid","Ports":"0.0.0.0:8080->80/tcp, :::8080->80/tcp"}';
 
 describe('parsePsLines', () => {
 	it('parses one container per JSON line and skips junk', () => {
@@ -21,6 +21,7 @@ describe('parsePsLines', () => {
 				id: 'abc123',
 				name: 'vsc-proj-x',
 				state: 'running',
+				statusText: 'Up 2 hours',
 				image: 'vsc-proj-uid',
 				ports: [{ containerPort: 80, hostPort: 8080 }],
 			},

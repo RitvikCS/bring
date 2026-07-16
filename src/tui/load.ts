@@ -11,10 +11,10 @@ import { resolveTarget } from '../application/resolve-target.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
-import { readLatestLog } from '../stores/log-store.js';
+import { readLatestLog, readLogTail } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
 import { loadState, stateFilePath } from '../stores/workspace-store.js';
-import type { TuiWorkspace } from './state.js';
+import { sanitizeLogLine, type TuiWorkspace } from './state.js';
 
 /**
  * Everything the TUI does to the world, behind one seam. App.tsx only calls
@@ -71,7 +71,7 @@ export function realEnvironment(
 			const ctx = contextFor(() => {});
 			const entries = loadState(stateFile).workspaces;
 			const listed = await Promise.all(
-				entries.map((entry) => loadOne(ctx, entry)),
+				entries.map((entry) => loadOne(ctx, stateDir, entry)),
 			);
 			// First-contact affordance: if the directory the TUI was opened
 			// from has a devcontainer config but was never brought up, list
@@ -81,7 +81,7 @@ export function realEnvironment(
 				here.outcome === 'resolved' &&
 				!listed.some((w) => w.ref.rootPath === here.workspace.rootPath)
 			) {
-				const current = await loadOne(ctx, {
+				const current = await loadOne(ctx, stateDir, {
 					path: here.workspace.rootPath,
 					lastUsedAt: '',
 					lastConfigPath: here.workspace.configPath,
@@ -111,6 +111,7 @@ export function realEnvironment(
 
 async function loadOne(
 	ctx: OperationContext | null,
+	stateDir: string,
 	entry: { path: string; lastUsedAt: string; lastConfigPath: string },
 ): Promise<TuiWorkspace> {
 	const ref: WorkspaceRef = {
@@ -127,6 +128,7 @@ async function loadOne(
 		containerIds: [],
 		imageNames: [],
 		forwardedPorts: [],
+		logTail: readLogTail(stateDir, ref.identity, 3).map(sanitizeLogLine),
 	};
 	if (!existsSync(entry.path) || !existsSync(entry.lastConfigPath)) {
 		return { ...base, status: 'missing-config' };
@@ -144,5 +146,6 @@ async function loadOne(
 		containerIds: result.snapshot.containerIds,
 		imageNames: result.snapshot.imageNames,
 		forwardedPorts: result.snapshot.forwardedPorts,
+		uptimeText: result.snapshot.uptimeText,
 	};
 }
