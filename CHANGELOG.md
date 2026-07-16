@@ -15,6 +15,12 @@ follow [Semantic Versioning](https://semver.org/).
   records container/image/workspace impact, and never guesses from resource
   names. Image use includes every Docker container so later cleanup cannot
   mistake a shared image for an unused one.
+- The Containers section is now live: it shows only positively related Dev
+  Container primaries and Compose sidecars, keeps selection stable across
+  refreshes, and provides responsive list/detail views with status, workspace,
+  image, age, role, service, ports, and exact container ID. The TUI now loads
+  every pane from one coordinated Docker inventory instead of querying Docker
+  once per remembered workspace.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

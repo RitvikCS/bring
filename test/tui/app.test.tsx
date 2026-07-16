@@ -10,7 +10,7 @@ import {
 	type TuiState,
 	type TuiWorkspace,
 } from '../../src/tui/state.js';
-import { makeWorkspace } from '../helpers/tui-fixtures.js';
+import { makeContainer, makeWorkspace } from '../helpers/tui-fixtures.js';
 
 // Frame tests at pinned sizes (P1-33/34/36/37/39/40/41/43). Input
 // simulation through fake stdin is unreliable on Ink 7, so behavior is
@@ -42,12 +42,17 @@ const HEALTHY: DoctorReport = { healthy: true, checks: [] };
 function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 	return {
 		doctor: () => Promise.resolve(HEALTHY),
-		loadWorkspaces: () => Promise.resolve([]),
+		load: () =>
+			Promise.resolve({
+				workspaces: [],
+				resources: { containers: [], images: [], refreshedAt: '' },
+				resourceProblem: null,
+				dotfilesRepository: null,
+			}),
 		up: () => Promise.reject(new Error('not in this test')),
 		down: () => Promise.reject(new Error('not in this test')),
 		shell: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
-		dotfilesDefault: () => null,
 		...overrides,
 	};
 }
@@ -98,14 +103,59 @@ describe('chrome', () => {
 		expect(frame).toContain('q quit');
 	});
 
-	it('renders a placeholder for Phase 2 sections', () => {
+	it('renders a useful empty state in Containers and placeholders for later sections', () => {
 		const frame = view(
 			stateFrom(
 				[{ type: 'move-section', delta: 1 }],
 				ready([makeWorkspace('a', 'running')]),
 			),
 		);
-		expect(frame).toContain('arrives in a later phase');
+		expect(frame).toContain('No Dev Container resources');
+		expect(frame).toContain('positively identified');
+		const images = view(
+			stateFrom(
+				[{ type: 'move-section', delta: 1 }],
+				stateFrom(
+					[{ type: 'move-section', delta: 1 }],
+					ready([makeWorkspace('a', 'running')]),
+				),
+			),
+		);
+		expect(images).toContain('arrives in a later phase');
+	});
+});
+
+describe('Containers section (§12.4/§12.5)', () => {
+	function containersState() {
+		return stateFrom([
+			{
+				type: 'loaded',
+				workspaces: [],
+				resources: {
+					containers: [makeContainer('project-dev', 'running', 'project')],
+					images: [],
+					refreshedAt: '',
+				},
+			},
+			{ type: 'move-section', delta: 1 },
+		]);
+	}
+
+	it('shows the resource list and detail together when wide', () => {
+		const frame = view(containersState());
+		expect(frame).toContain('CONTAINERS 1/1');
+		expect(frame).toContain('● project-dev · project');
+		expect(frame).toContain('primary devcontainer');
+		expect(frame).toContain('8000 → localhost:8000');
+	});
+
+	it('uses list then detail drill-down in a narrow terminal', () => {
+		const state = containersState();
+		const list = view(state, NARROW);
+		expect(list).toContain('● project-dev · project');
+		expect(list).not.toContain('primary devcontainer');
+		const detail = view(stateFrom([{ type: 'open-detail' }], state), NARROW);
+		expect(detail).toContain('primary devcontainer');
 	});
 });
 
@@ -303,8 +353,13 @@ describe('log view (P1-41)', () => {
 describe('full App loading flow', () => {
 	it('loads workspaces after a healthy doctor run', async () => {
 		const environment = fakeEnvironment({
-			loadWorkspaces: () =>
-				Promise.resolve([makeWorkspace('ml-platform', 'running')]),
+			load: () =>
+				Promise.resolve({
+					workspaces: [makeWorkspace('ml-platform', 'running')],
+					resources: { containers: [], images: [], refreshedAt: '' },
+					resourceProblem: null,
+					dotfilesRepository: null,
+				}),
 		});
 		const instance = render(
 			<App environment={environment} version="1.0.0" sizeOverride={WIDE} />,

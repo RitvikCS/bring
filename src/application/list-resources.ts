@@ -26,6 +26,8 @@ export async function listResources(options: {
 	dockerExe: string;
 	env?: NodeJS.ProcessEnv;
 	now?: Date;
+	/** Image inspection is intentionally lazy; exact sizes can be expensive. */
+	includeImages?: boolean;
 }): Promise<ResourceInventoryResult> {
 	const allContainers = await listAllContainers(options.dockerExe, {
 		env: options.env,
@@ -36,6 +38,16 @@ export async function listResources(options: {
 		);
 	}
 	const containers = identifyDevContainerResources(allContainers.value);
+	if (options.includeImages === false) {
+		return {
+			ok: true,
+			inventory: {
+				containers,
+				images: [],
+				refreshedAt: (options.now ?? new Date()).toISOString(),
+			},
+		};
+	}
 	const listedImages = await listDevContainerImages(
 		options.dockerExe,
 		containers.map((container) => container.imageId),

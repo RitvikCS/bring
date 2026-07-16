@@ -6,6 +6,11 @@ import type {
 	OperationStage,
 } from '../core/operation-events.js';
 import type {
+	DevContainerImageResource,
+	DevContainerResource,
+	ResourceInventory,
+} from '../core/resources.js';
+import type {
 	ForwardedPort,
 	WorkspaceRef,
 	WorkspaceStatus,
@@ -80,6 +85,11 @@ export interface TuiState {
 	/** Ordered per §12.1; selection tracks rootPath, not index. */
 	workspaces: TuiWorkspace[];
 	selectedPath: string | null;
+	containers: DevContainerResource[];
+	selectedContainerId: string | null;
+	images: DevContainerImageResource[];
+	selectedImageId: string | null;
+	resourceProblem: BringProblem | null;
 	/** Wide layout: which pane has focus. Narrow: detail visible or not. */
 	focusedPane: 'list' | 'detail';
 	detailOpen: boolean;
@@ -98,6 +108,11 @@ export const INITIAL_STATE: TuiState = {
 	section: 'workspaces',
 	workspaces: [],
 	selectedPath: null,
+	containers: [],
+	selectedContainerId: null,
+	images: [],
+	selectedImageId: null,
+	resourceProblem: null,
 	focusedPane: 'list',
 	detailOpen: false,
 	modal: null,
@@ -112,11 +127,15 @@ export type TuiAction =
 	| {
 			type: 'loaded';
 			workspaces: TuiWorkspace[];
+			resources?: ResourceInventory;
+			resourceProblem?: BringProblem | null;
 			dotfilesRepository?: string | null;
 	  }
 	| {
 			type: 'refreshed';
 			workspaces: TuiWorkspace[];
+			resources?: ResourceInventory;
+			resourceProblem?: BringProblem | null;
 			dotfilesRepository?: string | null;
 	  }
 	| { type: 'retry-loading' }
@@ -189,6 +208,24 @@ export function selectedWorkspace(state: TuiState): TuiWorkspace | null {
 	);
 }
 
+export function selectedContainer(
+	state: TuiState,
+): DevContainerResource | null {
+	return (
+		state.containers.find(
+			(container) => container.id === state.selectedContainerId,
+		) ?? null
+	);
+}
+
+export function selectedImage(
+	state: TuiState,
+): DevContainerImageResource | null {
+	return (
+		state.images.find((image) => image.id === state.selectedImageId) ?? null
+	);
+}
+
 export function reduce(state: TuiState, action: TuiAction): TuiState {
 	switch (action.type) {
 		case 'doctor-blocked':
@@ -200,6 +237,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			};
 		case 'loaded': {
 			const workspaces = orderWorkspaces(action.workspaces);
+			const resources = action.resources ?? emptyResources();
 			return {
 				...state,
 				phase: 'ready',
@@ -209,13 +247,26 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 						: state.dotfilesRepository,
 				workspaces,
 				selectedPath: workspaces[0]?.ref.rootPath ?? null,
+				containers: resources.containers,
+				selectedContainerId: resources.containers[0]?.id ?? null,
+				images: resources.images,
+				selectedImageId: resources.images[0]?.id ?? null,
+				resourceProblem: action.resourceProblem ?? null,
 				statusMessage:
-					workspaces.length === 0
-						? 'No workspaces yet — Bring remembers a project after its first `bring up`.'
-						: 'Ready',
+					action.resourceProblem !== undefined &&
+					action.resourceProblem !== null
+						? `! ${action.resourceProblem.summary}`
+						: workspaces.length === 0
+							? 'No workspaces yet — Bring remembers a project after its first `bring up`.'
+							: 'Ready',
 			};
 		}
 		case 'refreshed': {
+			const resources = action.resources ?? {
+				containers: state.containers,
+				images: state.images,
+				refreshedAt: '',
+			};
 			const workspaces = orderWorkspaces(
 				// A refresh never forgets a same-session failure the snapshot
 				// cannot see (the registry has no failure memory).
@@ -231,6 +282,12 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			const stillThere = workspaces.some(
 				(w) => w.ref.rootPath === state.selectedPath,
 			);
+			const containerStillThere = resources.containers.some(
+				(container) => container.id === state.selectedContainerId,
+			);
+			const imageStillThere = resources.images.some(
+				(image) => image.id === state.selectedImageId,
+			);
 			return {
 				...state,
 				workspaces,
@@ -241,9 +298,41 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedPath: stillThere
 					? state.selectedPath
 					: (workspaces[0]?.ref.rootPath ?? null),
+				containers: resources.containers,
+				selectedContainerId: containerStillThere
+					? state.selectedContainerId
+					: (resources.containers[0]?.id ?? null),
+				images: resources.images,
+				selectedImageId: imageStillThere
+					? state.selectedImageId
+					: (resources.images[0]?.id ?? null),
+				resourceProblem:
+					action.resourceProblem !== undefined
+						? action.resourceProblem
+						: state.resourceProblem,
 			};
 		}
 		case 'move-selection': {
+			if (state.section === 'containers') {
+				const index = state.containers.findIndex(
+					(container) => container.id === state.selectedContainerId,
+				);
+				const next = clampedIndex(index, action.delta, state.containers.length);
+				return {
+					...state,
+					selectedContainerId: state.containers[next]?.id ?? null,
+				};
+			}
+			if (state.section === 'images') {
+				const index = state.images.findIndex(
+					(image) => image.id === state.selectedImageId,
+				);
+				const next = clampedIndex(index, action.delta, state.images.length);
+				return {
+					...state,
+					selectedImageId: state.images[next]?.id ?? null,
+				};
+			}
 			const index = state.workspaces.findIndex(
 				(w) => w.ref.rootPath === state.selectedPath,
 			);
@@ -259,7 +348,12 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 		case 'move-section': {
 			const index = SECTIONS.indexOf(state.section);
 			const next = (index + action.delta + SECTIONS.length) % SECTIONS.length;
-			return { ...state, section: SECTIONS[next] as Section };
+			return {
+				...state,
+				section: SECTIONS[next] as Section,
+				focusedPane: 'list',
+				detailOpen: false,
+			};
 		}
 		case 'focus-pane':
 			return { ...state, focusedPane: action.pane };
@@ -396,6 +490,14 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 		case 'status-message':
 			return { ...state, statusMessage: action.message };
 	}
+}
+
+function emptyResources(): ResourceInventory {
+	return { containers: [], images: [], refreshedAt: '' };
+}
+
+function clampedIndex(index: number, delta: 1 | -1, length: number): number {
+	return Math.min(Math.max(index + delta, 0), length - 1);
 }
 
 /** The trailing non-empty line of a chunk, control characters stripped. */

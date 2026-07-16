@@ -12,6 +12,7 @@ import type {
 } from '../core/operation-events.js';
 import { Spinner } from '../direct/Spinner.js';
 import { enteringShellLine } from '../direct/shell-banner.js';
+import { ContainerDetail, ContainerList } from './ContainersPane.js';
 import { DoctorBlocked } from './DoctorBlocked.js';
 import { keyToCommand, type TuiCommand } from './keymap.js';
 import { LogView } from './LogView.js';
@@ -32,6 +33,7 @@ import {
 	reduce,
 	SECTIONS,
 	type Section,
+	selectedContainer,
 	selectedWorkspace,
 	type TuiState,
 	type TuiWorkspace,
@@ -81,6 +83,9 @@ export function App({
 	// moments so a buffered keypress can never insta-confirm a destructive
 	// action the user hasn't even seen yet.
 	const modalOpenedAtRef = useRef(0);
+	// Polling and post-operation refreshes may coincide. One inventory query at
+	// a time prevents Docker inspect processes from piling up behind the TUI.
+	const refreshingRef = useRef(false);
 
 	// Repaint from scratch shortly after the terminal is resized. Incremental
 	// rendering diffs against the previous frame, but a resize invalidates
@@ -109,14 +114,30 @@ export function App({
 		return () => clearTimeout(timer);
 	}, [size.columns, size.rows, suspendTerminal, sizeOverride]);
 
-	const refresh = useCallback(async () => {
-		const workspaces = await environment.loadWorkspaces();
-		dispatch({
-			type: 'refreshed',
-			workspaces,
-			dotfilesRepository: environment.dotfilesDefault(),
-		});
-	}, [environment]);
+	const refresh = useCallback(
+		async (sectionOverride?: Section) => {
+			if (refreshingRef.current) {
+				return;
+			}
+			refreshingRef.current = true;
+			try {
+				const section = sectionOverride ?? stateRef.current.section;
+				const data = await environment.load({
+					includeImages: section === 'images',
+				});
+				dispatch({
+					type: 'refreshed',
+					workspaces: data.workspaces,
+					resources: data.resources,
+					resourceProblem: data.resourceProblem,
+					dotfilesRepository: data.dotfilesRepository,
+				});
+			} finally {
+				refreshingRef.current = false;
+			}
+		},
+		[environment],
+	);
 
 	// Loading phase (§11.5): doctor gates everything (P1-43).
 	useEffect(() => {
@@ -133,19 +154,23 @@ export function App({
 				dispatch({ type: 'doctor-blocked', report });
 				return;
 			}
-			const workspaces = await environment.loadWorkspaces();
+			const data = await environment.load({
+				includeImages: state.section === 'images',
+			});
 			if (!cancelled) {
 				dispatch({
 					type: 'loaded',
-					workspaces,
-					dotfilesRepository: environment.dotfilesDefault(),
+					workspaces: data.workspaces,
+					resources: data.resources,
+					resourceProblem: data.resourceProblem,
+					dotfilesRepository: data.dotfilesRepository,
 				});
 			}
 		})();
 		return () => {
 			cancelled = true;
 		};
-	}, [state.phase, environment]);
+	}, [state.phase, state.section, environment]);
 
 	// The world changes underneath the TUI (a `bring down` in another
 	// terminal, a container dying) — poll while idle so the list stays
@@ -286,9 +311,16 @@ export function App({
 				case 'move-selection':
 					dispatch({ type: 'move-selection', delta: command.delta });
 					return;
-				case 'move-section':
+				case 'move-section': {
+					const index = SECTIONS.indexOf(current.section);
+					const next =
+						SECTIONS[
+							(index + command.delta + SECTIONS.length) % SECTIONS.length
+						] ?? 'workspaces';
 					dispatch({ type: 'move-section', delta: command.delta });
+					void refresh(next);
 					return;
+				}
 				case 'focus-pane':
 					if (wide) {
 						dispatch({ type: 'focus-pane', pane: command.pane });
@@ -299,6 +331,12 @@ export function App({
 					}
 					return;
 				case 'primary':
+					if (current.section === 'containers') {
+						if (selectedContainer(current) !== null) {
+							dispatch({ type: 'open-detail' });
+						}
+						return;
+					}
 					if (selected === null || current.section !== 'workspaces') {
 						return;
 					}
@@ -360,6 +398,15 @@ export function App({
 					runMutation('down', selected);
 					return;
 				case 'rebuild-or-refresh':
+					if (current.section !== 'workspaces') {
+						void refresh().then(() =>
+							dispatch({
+								type: 'status-message',
+								message: 'Resources refreshed.',
+							}),
+						);
+						return;
+					}
 					if (selected !== null && selected.status === 'missing-config') {
 						void refresh().then(() =>
 							dispatch({ type: 'status-message', message: 'Checked again.' }),
@@ -588,6 +635,9 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		);
 	}
 	if (state.section !== 'workspaces') {
+		if (state.section === 'containers') {
+			return <ContainersContent state={state} size={size} />;
+		}
 		return (
 			<Pane focused grow>
 				<Box flexGrow={1} justifyContent="center" alignItems="center">
@@ -640,6 +690,43 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 			</Pane>
 			<Pane focused={state.focusedPane === 'detail'} grow>
 				{rightPane}
+			</Pane>
+		</Box>
+	);
+}
+
+function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
+	const mode = layoutMode(size);
+	const rows = contentRows(size);
+	const selected = selectedContainer(state);
+	if (mode === 'narrow') {
+		return (
+			<Pane focused grow>
+				{state.detailOpen ? (
+					<ContainerDetail container={selected} />
+				) : (
+					<ContainerList
+						containers={state.containers}
+						selectedId={state.selectedContainerId}
+						focused
+						visibleRows={rows}
+					/>
+				)}
+			</Pane>
+		);
+	}
+	return (
+		<Box flexGrow={1} flexDirection="row">
+			<Pane focused={state.focusedPane === 'list'} width={listPaneWidth(size)}>
+				<ContainerList
+					containers={state.containers}
+					selectedId={state.selectedContainerId}
+					focused={state.focusedPane === 'list'}
+					visibleRows={rows}
+				/>
+			</Pane>
+			<Pane focused={state.focusedPane === 'detail'} grow>
+				<ContainerDetail container={selected} />
 			</Pane>
 		</Box>
 	);

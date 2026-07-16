@@ -10,7 +10,11 @@ import {
 	type TuiState,
 	type TuiWorkspace,
 } from '../../src/tui/state.js';
-import { makeWorkspace } from '../helpers/tui-fixtures.js';
+import {
+	makeContainer,
+	makeImage,
+	makeWorkspace,
+} from '../helpers/tui-fixtures.js';
 
 // Reducer transitions (spec §11.5) as pure function tests.
 
@@ -116,6 +120,33 @@ describe('selection movement', () => {
 		state = reduce(state, { type: 'move-selection', delta: 1 });
 		state = reduce(state, { type: 'move-selection', delta: 1 });
 		expect(selectedWorkspace(state)?.name).toBe('b');
+	});
+
+	it('moves the active resource selection and preserves it across refreshes', () => {
+		const containers = [makeContainer('one'), makeContainer('two')];
+		const images = [makeImage('first'), makeImage('second')];
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: { containers, images, refreshedAt: '' },
+		});
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'move-selection', delta: 1 });
+		expect(state.selectedContainerId).toBe('container-two');
+		state = reduce(state, {
+			type: 'refreshed',
+			workspaces: [],
+			resources: {
+				containers: [containers[1] as (typeof containers)[number]],
+				images,
+				refreshedAt: '',
+			},
+		});
+		expect(state.selectedContainerId).toBe('container-two');
+
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'move-selection', delta: 1 });
+		expect(state.selectedImageId).toBe('sha256:second');
 	});
 });
 

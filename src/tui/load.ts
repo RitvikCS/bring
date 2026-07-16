@@ -5,10 +5,15 @@ import { bringDown } from '../application/bring-down.js';
 import { bringUp } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
 import { type DoctorReport, runDoctor } from '../application/doctor.js';
-import { getSnapshot } from '../application/get-status.js';
+import {
+	listResources,
+	type ResourceInventoryResult,
+} from '../application/list-resources.js';
 import { openShell } from '../application/open-shell.js';
 import { resolveTarget } from '../application/resolve-target.js';
+import type { BringProblem } from '../core/errors.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
+import type { ResourceInventory } from '../core/resources.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
 import { readLatestLog, readLogTail } from '../stores/log-store.js';
@@ -22,7 +27,8 @@ import { sanitizeLogLine, type TuiWorkspace } from './state.js';
  */
 export interface TuiEnvironment {
 	doctor(): Promise<DoctorReport>;
-	loadWorkspaces(): Promise<TuiWorkspace[]>;
+	/** One coordinated read for every pane; avoids N Docker queries per refresh. */
+	load(options?: { includeImages?: boolean }): Promise<TuiData>;
 	up(
 		workspace: WorkspaceRef,
 		options: { rebuild?: boolean },
@@ -36,8 +42,13 @@ export interface TuiEnvironment {
 	/** Runs while the terminal is suspended — inherited stdio (§13.4). */
 	shell(workspace: WorkspaceRef): Promise<OperationResult>;
 	readLog(workspace: WorkspaceRef): string | null;
-	/** The user-wide dotfiles default, if one is remembered (A6). */
-	dotfilesDefault(): string | null;
+}
+
+export interface TuiData {
+	workspaces: TuiWorkspace[];
+	resources: ResourceInventory;
+	resourceProblem: BringProblem | null;
+	dotfilesRepository: string | null;
 }
 
 export function realEnvironment(
@@ -67,11 +78,29 @@ export function realEnvironment(
 
 	return {
 		doctor: () => runDoctor({ env }),
-		loadWorkspaces: async () => {
+		load: async (options) => {
 			const ctx = contextFor(() => {});
+			const resourceResult: ResourceInventoryResult =
+				ctx === null
+					? {
+							ok: false,
+							problem: {
+								code: 'DOCKER_FAILED',
+								summary: 'Docker is not available for resource inventory.',
+								remedy: 'bring doctor',
+							},
+						}
+					: await listResources({
+							dockerExe: ctx.dockerExe,
+							env,
+							includeImages: options?.includeImages,
+						});
+			const resources = resourceResult.ok
+				? resourceResult.inventory
+				: emptyInventory();
 			const entries = loadState(stateFile).workspaces;
-			const listed = await Promise.all(
-				entries.map((entry) => loadOne(ctx, stateDir, entry)),
+			const listed = entries.map((entry) =>
+				loadOne(resources, resourceResult.ok, stateDir, entry),
 			);
 			// First-contact affordance: if the directory the TUI was opened
 			// from has a devcontainer config but was never brought up, list
@@ -81,14 +110,19 @@ export function realEnvironment(
 				here.outcome === 'resolved' &&
 				!listed.some((w) => w.ref.rootPath === here.workspace.rootPath)
 			) {
-				const current = await loadOne(ctx, stateDir, {
+				const current = loadOne(resources, resourceResult.ok, stateDir, {
 					path: here.workspace.rootPath,
 					lastUsedAt: '',
 					lastConfigPath: here.workspace.configPath,
 				});
 				listed.push({ ...current, unregistered: true });
 			}
-			return listed;
+			return {
+				workspaces: listed,
+				resources,
+				resourceProblem: resourceResult.ok ? null : resourceResult.problem,
+				dotfilesRepository: loadState(stateFile).dotfilesRepository ?? null,
+			};
 		},
 		up: (workspace, options, emit) =>
 			bringUp(mustContext(emit), workspace, {
@@ -105,7 +139,6 @@ export function realEnvironment(
 				workspace.configPath,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
-		dotfilesDefault: () => loadState(stateFile).dotfilesRepository ?? null,
 	};
 }
 
@@ -124,11 +157,12 @@ export function interestingLogLine(line: string): boolean {
 	return line.trim().length > 0;
 }
 
-async function loadOne(
-	ctx: OperationContext | null,
+function loadOne(
+	resources: ResourceInventory,
+	resourceInventoryHealthy: boolean,
 	stateDir: string,
 	entry: { path: string; lastUsedAt: string; lastConfigPath: string },
-): Promise<TuiWorkspace> {
+): TuiWorkspace {
 	const ref: WorkspaceRef = {
 		input: entry.path,
 		rootPath: entry.path,
@@ -151,19 +185,40 @@ async function loadOne(
 	if (!existsSync(entry.path) || !existsSync(entry.lastConfigPath)) {
 		return { ...base, status: 'missing-config' };
 	}
-	if (ctx === null) {
+	if (!resourceInventoryHealthy) {
 		return base;
 	}
-	const result = await getSnapshot(ctx, ref);
-	if (!result.ok) {
-		return base;
-	}
+	const containers = resources.containers.filter(
+		(container) => container.workspacePath === ref.rootPath,
+	);
+	const running = containers.filter(
+		(container) => container.state === 'running',
+	);
+	const primary =
+		running.find((container) => container.role === 'primary') ??
+		running[0] ??
+		containers.find((container) => container.role === 'primary') ??
+		containers[0];
 	return {
 		...base,
-		status: result.snapshot.status,
-		containerIds: result.snapshot.containerIds,
-		imageNames: result.snapshot.imageNames,
-		forwardedPorts: result.snapshot.forwardedPorts,
-		uptimeText: result.snapshot.uptimeText,
+		status:
+			containers.length === 0
+				? 'not-created'
+				: running.length > 0
+					? 'running'
+					: 'stopped',
+		containerIds: containers.map((container) => container.id),
+		imageNames: [
+			...new Set(containers.map((container) => container.imageName)),
+		],
+		forwardedPorts: running.flatMap((container) => container.ports),
+		uptimeText:
+			primary !== undefined && primary.statusText !== ''
+				? primary.statusText
+				: undefined,
 	};
+}
+
+function emptyInventory(): ResourceInventory {
+	return { containers: [], images: [], refreshedAt: new Date(0).toISOString() };
 }

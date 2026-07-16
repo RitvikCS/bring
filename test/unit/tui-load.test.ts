@@ -33,7 +33,7 @@ describe('loadWorkspaces current-folder affordance', () => {
 		const env = makeEnv();
 		const project = makeProject();
 		const environment = realEnvironment(env, project);
-		const listed = await environment.loadWorkspaces();
+		const listed = (await environment.load()).workspaces;
 		expect(listed).toHaveLength(1);
 		expect(listed[0]).toMatchObject({
 			unregistered: true,
@@ -50,7 +50,7 @@ describe('loadWorkspaces current-folder affordance', () => {
 			configPath: join(project, '.devcontainer', 'devcontainer.json'),
 		});
 		const environment = realEnvironment(env, project);
-		const listed = await environment.loadWorkspaces();
+		const listed = (await environment.load()).workspaces;
 		expect(listed).toHaveLength(1);
 		expect(listed[0]?.unregistered).toBeUndefined();
 	});
@@ -59,7 +59,7 @@ describe('loadWorkspaces current-folder affordance', () => {
 		const env = makeEnv();
 		const emptyDir = realpathSync(mkdtempSync(join(tmpdir(), 'bring-empty-')));
 		const environment = realEnvironment(env, emptyDir);
-		const listed = await environment.loadWorkspaces();
+		const listed = (await environment.load()).workspaces;
 		expect(listed).toEqual([]);
 	});
 });
