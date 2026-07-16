@@ -109,6 +109,21 @@ export function realEnvironment(
 	};
 }
 
+/**
+ * Devcontainer logs end in machinery the detail pane already covers:
+ * bare `[timestamp]` lines and the one-line `{"outcome":…}` result JSON.
+ * The tail should show what HAPPENED, so those are skipped.
+ */
+export function interestingLogLine(line: string): boolean {
+	if (/^\[[\d\-T:.Z ]+\]\s*$/.test(line)) {
+		return false;
+	}
+	if (line.startsWith('{"outcome"')) {
+		return false;
+	}
+	return line.trim().length > 0;
+}
+
 async function loadOne(
 	ctx: OperationContext | null,
 	stateDir: string,
@@ -128,7 +143,10 @@ async function loadOne(
 		containerIds: [],
 		imageNames: [],
 		forwardedPorts: [],
-		logTail: readLogTail(stateDir, ref.identity, 3).map(sanitizeLogLine),
+		logTail: readLogTail(stateDir, ref.identity, 12)
+			.map(sanitizeLogLine)
+			.filter(interestingLogLine)
+			.slice(-3),
 	};
 	if (!existsSync(entry.path) || !existsSync(entry.lastConfigPath)) {
 		return { ...base, status: 'missing-config' };

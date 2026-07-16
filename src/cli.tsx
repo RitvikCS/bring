@@ -122,16 +122,10 @@ async function runTui(section: Section): Promise<number> {
 		/>,
 		{ alternateScreen: true, incrementalRendering: true, maxFps: 30 },
 	);
-	// Incremental rendering can leave stale cells behind after a resize
-	// (fragments of old borders floating in blank space) — drop the
-	// remembered output so the next frame repaints from scratch.
-	const clearOnResize = () => instance.clear();
-	process.stdout.on('resize', clearOnResize);
-	try {
-		await instance.waitUntilExit();
-	} finally {
-		process.stdout.off('resize', clearOnResize);
-	}
+	// Resize repainting lives inside App (a debounced empty suspend cycle):
+	// instance.clear() erases the screen but syncs the renderer's diff state,
+	// so an unchanged next frame writes NOTHING and the screen stays blank.
+	await instance.waitUntilExit();
 	return EXIT.success;
 }
 

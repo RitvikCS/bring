@@ -66,6 +66,40 @@ export function App({
 	// Effects read the latest state without re-subscribing useInput.
 	const stateRef = useRef(state);
 	stateRef.current = state;
+	// Keys are ignored until this timestamp — set after a shell returns, so
+	// an `exit⏎` typed into an already-dead shell can't leak into the TUI as
+	// commands (e = shell, x = remove request, Enter = confirm…).
+	const ignoreInputUntilRef = useRef(0);
+	// When a confirmation modal opened — it ignores Enter for its first
+	// moments so a buffered keypress can never insta-confirm a destructive
+	// action the user hasn't even seen yet.
+	const modalOpenedAtRef = useRef(0);
+
+	// Repaint from scratch shortly after the terminal is resized. Incremental
+	// rendering diffs against the previous frame, but a resize invalidates
+	// what is actually on screen (stale cells, shifted rows); an empty
+	// suspend cycle is Ink's sanctioned full redraw. Debounced so a drag
+	// resize causes one repaint, not dozens.
+	const firstSizeRef = useRef(true);
+	useEffect(() => {
+		if (sizeOverride !== undefined) {
+			return;
+		}
+		if (firstSizeRef.current) {
+			firstSizeRef.current = false;
+			return;
+		}
+		const timer = setTimeout(() => {
+			void (async () => {
+				try {
+					await suspendTerminal(async () => {});
+				} catch {
+					// A real suspension (the shell) is active — it repaints anyway.
+				}
+			})();
+		}, 200);
+		return () => clearTimeout(timer);
+	}, [size.columns, size.rows, suspendTerminal, sizeOverride]);
 
 	const refresh = useCallback(async () => {
 		const workspaces = await environment.loadWorkspaces();
@@ -187,9 +221,12 @@ export function App({
 				process.stdout.write(`${enteringShellLine(workspace.name, true)}\n`);
 				await environment.shell(workspace.ref);
 			});
+			// Anything typed into the dying/dead shell would otherwise arrive
+			// here as TUI commands the instant input resumes.
+			ignoreInputUntilRef.current = Date.now() + 400;
 			dispatch({
 				type: 'status-message',
-				message: `Shell in ${workspace.name} closed.`,
+				message: `Shell in ${workspace.name} closed — back in Bring.`,
 			});
 			await refresh();
 		},
@@ -326,6 +363,7 @@ export function App({
 					}
 					// Rebuild deletes the container and rebuilds from scratch —
 					// too expensive for a stray keystroke, so it confirms first.
+					modalOpenedAtRef.current = Date.now();
 					dispatch({ type: 'open-confirm-rebuild' });
 					return;
 				case 'open-shell':
@@ -364,6 +402,7 @@ export function App({
 						});
 						return;
 					}
+					modalOpenedAtRef.current = Date.now();
 					dispatch({ type: 'open-confirm-remove' });
 					return;
 				case 'confirm-modal': {
@@ -372,6 +411,12 @@ export function App({
 						modal?.kind !== 'confirm-remove' &&
 						modal?.kind !== 'confirm-rebuild'
 					) {
+						return;
+					}
+					// A confirmation must be a deliberate second keystroke: an
+					// Enter arriving within the modal's first instants is
+					// buffered/typed-ahead input, not a decision.
+					if (Date.now() - modalOpenedAtRef.current < 300) {
 						return;
 					}
 					const target = current.workspaces.find(
@@ -414,6 +459,9 @@ export function App({
 	);
 
 	useInput((input, key) => {
+		if (Date.now() < ignoreInputUntilRef.current) {
+			return;
+		}
 		const current = stateRef.current;
 		const command = keyToCommand(input, key, {
 			phase: current.phase,
@@ -603,7 +651,11 @@ function Pane({
 	return (
 		<Box
 			borderStyle="round"
-			borderColor={focused ? 'cyan' : 'gray'}
+			// Unfocused borders dim the DEFAULT foreground rather than using
+			// "gray": ANSI bright-black is invisible on dark/transparent
+			// themes (user report — the pane looked like it had no border).
+			borderColor={focused ? 'cyan' : undefined}
+			borderDimColor={!focused}
 			paddingX={1}
 			flexDirection="column"
 			width={width}

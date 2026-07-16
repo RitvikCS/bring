@@ -6,7 +6,7 @@ import {
 	rememberWorkspace,
 	stateFilePath,
 } from '../../src/stores/workspace-store.js';
-import { realEnvironment } from '../../src/tui/load.js';
+import { interestingLogLine, realEnvironment } from '../../src/tui/load.js';
 import { makeBinDir, writeFakeBin } from '../helpers/fake-bin.js';
 
 // The TUI's data loading (current-folder affordance): a project the
@@ -61,5 +61,19 @@ describe('loadWorkspaces current-folder affordance', () => {
 		const environment = realEnvironment(env, emptyDir);
 		const listed = await environment.loadWorkspaces();
 		expect(listed).toEqual([]);
+	});
+});
+
+describe('interestingLogLine (detail-pane tail filter)', () => {
+	it('drops bare timestamps and the outcome JSON, keeps real content', () => {
+		expect(interestingLogLine('[2026-07-16T17:05:34.115Z]')).toBe(false);
+		expect(interestingLogLine('{"outcome":"success","containerId":"a"}')).toBe(
+			false,
+		);
+		expect(interestingLogLine('   ')).toBe(false);
+		expect(interestingLogLine('Step 5/9 : RUN pip install')).toBe(true);
+		expect(interestingLogLine('[2026-07-16T17:05:34.115Z] Running…')).toBe(
+			true,
+		);
 	});
 });

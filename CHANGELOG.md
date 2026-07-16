@@ -73,6 +73,28 @@ that introduced it.
 
 ### Fixed
 
+- Keystrokes typed into an already-closed shell could leak into the TUI as
+  commands — `exit⏎` typed after bash had quietly exited (Ctrl+D at an
+  empty prompt) arrived as `e`/`x`/`i`/`t`/Enter, where `x` opens the
+  remove confirmation and Enter was one buffered keypress from confirming
+  it. The TUI now ignores input for a short window after a shell returns,
+  and confirmation modals ignore Enter for their first instants so a
+  buffered keypress can never insta-confirm a destructive action. The
+  return from a shell also announces itself: "Shell in X closed — back in
+  Bring."
+- Resizing could leave the TUI blank (most visibly around the too-small
+  threshold): the old repaint-on-resize called `instance.clear()`, which
+  erases the screen but tells the incremental renderer the old frame is
+  still there — an unchanged next frame then wrote nothing. Resizes now
+  trigger a debounced full redraw through Ink's suspend cycle, which also
+  cures the stale-cell fragments.
+- The unfocused pane's border looked missing (the "open right border"
+  reports): it was colored ANSI gray/bright-black, which is invisible on
+  dark or transparent terminal themes. Unfocused borders now dim the
+  default foreground color, which is visible on any theme.
+- The detail pane's log tail no longer shows bare `[timestamp]` lines or
+  the trailing `{"outcome":…}` result JSON — it skips to the last lines
+  that say what actually happened.
 - `Ctrl+H` (focus the list pane) never worked: terminals send Ctrl+H as the
   ASCII backspace character, so it arrived as a backspace keypress with the
   ctrl flag unset and the binding never fired. Backspace now focuses the
