@@ -150,6 +150,60 @@ describe('selection movement', () => {
 	});
 });
 
+describe('image multi-selection and prune review', () => {
+	function imageState() {
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: {
+				containers: [],
+				images: [makeImage('used', true), makeImage('free'), makeImage('old')],
+				refreshedAt: '',
+			},
+		});
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		return reduce(state, { type: 'move-section', delta: 1 });
+	}
+
+	it('blocks in-use selection and toggles an unused image', () => {
+		let state = imageState();
+		state = reduce(state, { type: 'toggle-image-selection' });
+		expect(state.selectedImageIds).toEqual([]);
+		expect(state.statusMessage).toContain('cannot be selected');
+		state = reduce(state, { type: 'move-selection', delta: 1 });
+		state = reduce(state, { type: 'toggle-image-selection' });
+		expect(state.selectedImageIds).toEqual(['sha256:free']);
+		state = reduce(state, { type: 'toggle-image-selection' });
+		expect(state.selectedImageIds).toEqual([]);
+	});
+
+	it('prune selects every unused image and opens one impact confirmation', () => {
+		let state = imageState();
+		state = reduce(state, { type: 'select-unused-images' });
+		expect(state.selectedImageIds).toEqual(['sha256:free', 'sha256:old']);
+		state = reduce(state, { type: 'open-confirm-image-remove' });
+		expect(state.modal).toEqual({
+			kind: 'confirm-image-remove',
+			imageIds: ['sha256:free', 'sha256:old'],
+		});
+	});
+
+	it('preserves marks for existing removable images across refresh', () => {
+		let state = imageState();
+		state = reduce(state, { type: 'select-unused-images' });
+		state = reduce(state, {
+			type: 'refreshed',
+			workspaces: [],
+			resources: {
+				containers: [],
+				images: [makeImage('free')],
+				refreshedAt: '',
+			},
+		});
+		expect(state.selectedImageIds).toEqual(['sha256:free']);
+	});
+});
+
 describe('operation lifecycle', () => {
 	it('started marks the workspace busy and clears any modal', () => {
 		let state = readyState([makeWorkspace('a', 'stopped')]);

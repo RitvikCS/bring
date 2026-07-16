@@ -3,7 +3,11 @@ import stringWidth from 'string-width';
 import { describe, expect, it } from 'vitest';
 import { AppView } from '../../src/tui/App.js';
 import { INITIAL_STATE, reduce } from '../../src/tui/state.js';
-import { makeContainer, makeWorkspace } from '../helpers/tui-fixtures.js';
+import {
+	makeContainer,
+	makeImage,
+	makeWorkspace,
+} from '../helpers/tui-fixtures.js';
 
 // Regression guard for frame geometry: no rendered line may ever exceed
 // the terminal width, and every content row must close with a border
@@ -62,6 +66,32 @@ describe('frame geometry', () => {
 				lines.filter((line) => stringWidth(line) > columns),
 				`overflow at ${columns} cols`,
 			).toEqual([]);
+			const openRows = lines
+				.slice(1, -2)
+				.filter((line) => !/[│╮╯╭╰]\s*$/.test(line.trimEnd()));
+			expect(openRows, `open right border at ${columns} cols`).toEqual([]);
+		}
+	});
+
+	it('keeps image metadata and selection inside every wide frame', () => {
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: {
+				containers: [],
+				images: [makeImage('a-very-long-devcontainer-image-reference', true)],
+				refreshedAt: '',
+			},
+		});
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		for (const columns of [90, 91, 99, 100, 117, 121, 140]) {
+			const instance = render(
+				<AppView state={state} size={{ columns, rows: 24 }} version="0.0.0" />,
+			);
+			const lines = (instance.lastFrame() ?? '').split('\n');
+			instance.unmount();
+			expect(lines.filter((line) => stringWidth(line) > columns)).toEqual([]);
 			const openRows = lines
 				.slice(1, -2)
 				.filter((line) => !/[│╮╯╭╰]\s*$/.test(line.trimEnd()));

@@ -10,6 +10,11 @@ Usage
   bring <global-command>       doctor · ls
   bring                        Open the full-screen interface
 
+TUI sections
+  bring workspaces             Workspace lifecycle and logs
+  bring containers             Dev Container resources and safe actions
+  bring images                 Dev Container image usage and cleanup
+
 Targets
   .  this  <path>              Default target is the current directory.
                                Bring finds the nearest devcontainer config

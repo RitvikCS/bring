@@ -11,6 +11,10 @@ import {
 import type { OperationContext } from '../application/context.js';
 import { type DoctorReport, runDoctor } from '../application/doctor.js';
 import {
+	type ImageRemovalResult,
+	removeImageResources,
+} from '../application/image-actions.js';
+import {
 	listResources,
 	type ResourceInventoryResult,
 } from '../application/list-resources.js';
@@ -19,6 +23,7 @@ import { resolveTarget } from '../application/resolve-target.js';
 import type { BringProblem } from '../core/errors.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
 import type {
+	DevContainerImageResource,
 	DevContainerResource,
 	ResourceInventory,
 } from '../core/resources.js';
@@ -56,6 +61,9 @@ export interface TuiEnvironment {
 		container: DevContainerResource,
 		action: 'stop' | 'remove',
 	): Promise<ContainerActionResult>;
+	removeImages(
+		images: readonly DevContainerImageResource[],
+	): Promise<ImageRemovalResult>;
 	readLog(workspace: WorkspaceRef): string | null;
 }
 
@@ -163,6 +171,11 @@ export function realEnvironment(
 				mustContext(() => {}),
 				container,
 				action,
+			),
+		removeImages: (images) =>
+			removeImageResources(
+				mustContext(() => {}),
+				images,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
 	};

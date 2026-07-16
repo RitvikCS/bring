@@ -56,10 +56,11 @@ export type Modal =
 	| { kind: 'help' }
 	| { kind: 'confirm-remove'; workspacePath: string }
 	| { kind: 'confirm-rebuild'; workspacePath: string }
-	| { kind: 'confirm-container-remove'; containerId: string };
+	| { kind: 'confirm-container-remove'; containerId: string }
+	| { kind: 'confirm-image-remove'; imageIds: string[] };
 
 export interface ResourceOperation {
-	kind: 'stop-container' | 'remove-container';
+	kind: 'stop-container' | 'remove-container' | 'remove-images';
 	resourceId: string;
 	resourceName: string;
 }
@@ -96,6 +97,7 @@ export interface TuiState {
 	selectedContainerId: string | null;
 	images: DevContainerImageResource[];
 	selectedImageId: string | null;
+	selectedImageIds: string[];
 	resourceProblem: BringProblem | null;
 	/** Wide layout: which pane has focus. Narrow: detail visible or not. */
 	focusedPane: 'list' | 'detail';
@@ -120,6 +122,7 @@ export const INITIAL_STATE: TuiState = {
 	selectedContainerId: null,
 	images: [],
 	selectedImageId: null,
+	selectedImageIds: [],
 	resourceProblem: null,
 	focusedPane: 'list',
 	detailOpen: false,
@@ -157,6 +160,9 @@ export type TuiAction =
 	| { type: 'open-confirm-remove' }
 	| { type: 'open-confirm-rebuild' }
 	| { type: 'open-confirm-container-remove' }
+	| { type: 'toggle-image-selection' }
+	| { type: 'select-unused-images' }
+	| { type: 'open-confirm-image-remove' }
 	| { type: 'close-modal' }
 	| {
 			type: 'resource-operation-started';
@@ -243,6 +249,12 @@ export function selectedImage(
 	);
 }
 
+export function selectedImages(state: TuiState): DevContainerImageResource[] {
+	return state.images.filter((image) =>
+		state.selectedImageIds.includes(image.id),
+	);
+}
+
 export function reduce(state: TuiState, action: TuiAction): TuiState {
 	switch (action.type) {
 		case 'doctor-blocked':
@@ -268,6 +280,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedContainerId: resources.containers[0]?.id ?? null,
 				images: resources.images,
 				selectedImageId: resources.images[0]?.id ?? null,
+				selectedImageIds: [],
 				resourceProblem: action.resourceProblem ?? null,
 				statusMessage:
 					action.resourceProblem !== undefined &&
@@ -305,6 +318,9 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			const imageStillThere = resources.images.some(
 				(image) => image.id === state.selectedImageId,
 			);
+			const selectedImageIds = state.selectedImageIds.filter((id) =>
+				resources.images.some((image) => image.id === id && !image.inUse),
+			);
 			return {
 				...state,
 				workspaces,
@@ -323,6 +339,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedImageId: imageStillThere
 					? state.selectedImageId
 					: (resources.images[0]?.id ?? null),
+				selectedImageIds,
 				resourceProblem:
 					action.resourceProblem !== undefined
 						? action.resourceProblem
@@ -416,6 +433,64 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				},
 			};
 		}
+		case 'toggle-image-selection': {
+			const image = selectedImage(state);
+			if (image === null) {
+				return state;
+			}
+			if (image.inUse) {
+				return {
+					...state,
+					statusMessage: `${image.displayName} is in use by ${image.containerNames.join(', ')} and cannot be selected.`,
+				};
+			}
+			const selected = state.selectedImageIds.includes(image.id);
+			return {
+				...state,
+				selectedImageIds: selected
+					? state.selectedImageIds.filter((id) => id !== image.id)
+					: [...state.selectedImageIds, image.id],
+			};
+		}
+		case 'select-unused-images': {
+			const selectedImageIds = state.images
+				.filter((image) => !image.inUse)
+				.map((image) => image.id);
+			return {
+				...state,
+				selectedImageIds,
+				statusMessage:
+					selectedImageIds.length === 0
+						? 'No unused Dev Container images to prune.'
+						: `Selected ${selectedImageIds.length} unused image${selectedImageIds.length === 1 ? '' : 's'} for review.`,
+			};
+		}
+		case 'open-confirm-image-remove': {
+			const current = selectedImage(state);
+			const imageIds =
+				state.selectedImageIds.length > 0
+					? state.selectedImageIds
+					: current === null
+						? []
+						: [current.id];
+			const images = state.images.filter((image) =>
+				imageIds.includes(image.id),
+			);
+			const blocked = images.find((image) => image.inUse);
+			if (blocked !== undefined) {
+				return {
+					...state,
+					statusMessage: `${blocked.displayName} is in use and cannot be removed.`,
+				};
+			}
+			if (images.length === 0) {
+				return { ...state, statusMessage: 'No removable images selected.' };
+			}
+			return {
+				...state,
+				modal: { kind: 'confirm-image-remove', imageIds },
+			};
+		}
 		case 'close-modal':
 			return { ...state, modal: null };
 		case 'resource-operation-started':
@@ -435,6 +510,10 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			return {
 				...state,
 				resourceOperation: null,
+				selectedImageIds:
+					state.resourceOperation?.kind === 'remove-images' && action.ok
+						? []
+						: state.selectedImageIds,
 				statusMessage: `${action.ok ? '✓' : '✗'} ${action.message}`,
 			};
 		case 'operation-started':

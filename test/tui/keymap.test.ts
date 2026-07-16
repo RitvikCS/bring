@@ -84,6 +84,10 @@ describe('keymap: ready screen', () => {
 		expect(keyToCommand('e', key(), READY)).toEqual({ kind: 'open-shell' });
 		expect(keyToCommand('L', key(), READY)).toEqual({ kind: 'open-logs' });
 		expect(keyToCommand('x', key(), READY)).toEqual({ kind: 'request-remove' });
+		expect(keyToCommand(' ', key(), READY)).toEqual({
+			kind: 'toggle-selection',
+		});
+		expect(keyToCommand('p', key(), READY)).toEqual({ kind: 'prune-unused' });
 		expect(keyToCommand('?', key(), READY)).toEqual({ kind: 'open-help' });
 		expect(keyToCommand('q', key(), READY)).toEqual({ kind: 'quit' });
 		expect(keyToCommand('', key({ return: true }), READY)).toEqual({
@@ -189,6 +193,18 @@ describe('keymap: modals', () => {
 		expect(keyToCommand('', key({ escape: true }), confirm)).toEqual({
 			kind: 'close-modal',
 		});
+	});
+
+	it('image removal confirmation also requires Enter', () => {
+		const confirm: KeyContext = {
+			...READY,
+			modal: 'confirm-image-remove',
+		};
+		expect(keyToCommand(' ', key(), confirm)).toBeNull();
+		expect(keyToCommand('', key({ return: true }), confirm)).toEqual({
+			kind: 'confirm-modal',
+		});
+		expect(keyToCommand('q', key(), confirm)).toEqual({ kind: 'close-modal' });
 	});
 });
 

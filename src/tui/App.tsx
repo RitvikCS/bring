@@ -14,6 +14,7 @@ import { Spinner } from '../direct/Spinner.js';
 import { enteringShellLine } from '../direct/shell-banner.js';
 import { ContainerDetail, ContainerList } from './ContainersPane.js';
 import { DoctorBlocked } from './DoctorBlocked.js';
+import { ImageDetail, ImageList } from './ImagesPane.js';
 import { keyToCommand, type TuiCommand } from './keymap.js';
 import { LogView } from './LogView.js';
 import {
@@ -23,11 +24,13 @@ import {
 	logVisibleRows,
 	MIN_COLUMNS,
 	MIN_ROWS,
+	resourceListPaneWidth,
 	type Size,
 } from './layout.js';
 import type { TuiEnvironment } from './load.js';
 import {
 	ConfirmContainerRemove,
+	ConfirmImageRemove,
 	ConfirmRebuild,
 	ConfirmRemove,
 	HelpOverlay,
@@ -39,6 +42,8 @@ import {
 	SECTIONS,
 	type Section,
 	selectedContainer,
+	selectedImage,
+	type selectedImages,
 	selectedWorkspace,
 	type TuiState,
 	type TuiWorkspace,
@@ -188,6 +193,7 @@ export function App({
 			const current = stateRef.current;
 			if (
 				current.operation === null &&
+				current.resourceOperation === null &&
 				current.modal === null &&
 				current.logView === null
 			) {
@@ -282,6 +288,39 @@ export function App({
 						message: result.message,
 					});
 					await refresh('containers');
+				});
+		},
+		[environment, refresh],
+	);
+
+	const runImageRemoval = useCallback(
+		(images: ReturnType<typeof selectedImages>) => {
+			if (images.length === 0) {
+				return;
+			}
+			dispatch({
+				type: 'resource-operation-started',
+				kind: 'remove-images',
+				resourceId: images.map((image) => image.id).join(','),
+				resourceName: `${images.length} image${images.length === 1 ? '' : 's'}`,
+			});
+			void environment
+				.removeImages(images)
+				.catch((error) => ({
+					ok: false as const,
+					message: error instanceof Error ? error.message : String(error),
+					problem: {
+						code: 'INTERNAL_ERROR' as const,
+						summary: error instanceof Error ? error.message : String(error),
+					},
+				}))
+				.then(async (result) => {
+					dispatch({
+						type: 'resource-operation-completed',
+						ok: result.ok,
+						message: result.message,
+					});
+					await refresh('images');
 				});
 		},
 		[environment, refresh],
@@ -400,6 +439,12 @@ export function App({
 				case 'primary':
 					if (current.section === 'containers') {
 						if (selectedContainer(current) !== null) {
+							dispatch({ type: 'open-detail' });
+						}
+						return;
+					}
+					if (current.section === 'images') {
+						if (selectedImage(current) !== null) {
 							dispatch({ type: 'open-detail' });
 						}
 						return;
@@ -541,6 +586,11 @@ export function App({
 						}
 						return;
 					}
+					if (current.section === 'images') {
+						modalOpenedAtRef.current = Date.now();
+						dispatch({ type: 'open-confirm-image-remove' });
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -559,7 +609,8 @@ export function App({
 					if (
 						modal?.kind !== 'confirm-remove' &&
 						modal?.kind !== 'confirm-rebuild' &&
-						modal?.kind !== 'confirm-container-remove'
+						modal?.kind !== 'confirm-container-remove' &&
+						modal?.kind !== 'confirm-image-remove'
 					) {
 						return;
 					}
@@ -577,6 +628,14 @@ export function App({
 						if (target !== undefined) {
 							runContainerMutation('remove', target);
 						}
+						return;
+					}
+					if (modal.kind === 'confirm-image-remove') {
+						const targets = current.images.filter((image) =>
+							modal.imageIds.includes(image.id),
+						);
+						dispatch({ type: 'close-modal' });
+						runImageRemoval(targets);
 						return;
 					}
 					const target = current.workspaces.find(
@@ -613,6 +672,21 @@ export function App({
 					dispatch({ type: 'dismiss-operation' });
 					void refresh();
 					return;
+				case 'toggle-selection':
+					if (current.section === 'images') {
+						dispatch({ type: 'toggle-image-selection' });
+					}
+					return;
+				case 'prune-unused':
+					if (current.section === 'images') {
+						dispatch({ type: 'select-unused-images' });
+						modalOpenedAtRef.current = Date.now();
+						const unused = current.images.filter((image) => !image.inUse);
+						if (unused.length > 0) {
+							dispatch({ type: 'open-confirm-image-remove' });
+						}
+					}
+					return;
 			}
 		},
 		[
@@ -620,6 +694,7 @@ export function App({
 			size,
 			runMutation,
 			runContainerMutation,
+			runImageRemoval,
 			runShell,
 			runContainerShell,
 			openLogs,
@@ -739,6 +814,16 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 			</Box>
 		);
 	}
+	if (modal?.kind === 'confirm-image-remove') {
+		const targets = state.images.filter((image) =>
+			modal.imageIds.includes(image.id),
+		);
+		return targets.length === 0 ? null : (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ConfirmImageRemove images={targets} />
+			</Box>
+		);
+	}
 	if (modal?.kind === 'confirm-remove' || modal?.kind === 'confirm-rebuild') {
 		const target = state.workspaces.find(
 			(w) => w.ref.rootPath === modal.workspacePath,
@@ -763,6 +848,9 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 	if (state.section !== 'workspaces') {
 		if (state.section === 'containers') {
 			return <ContainersContent state={state} size={size} />;
+		}
+		if (state.section === 'images') {
+			return <ImagesContent state={state} size={size} />;
 		}
 		return (
 			<Pane focused grow>
@@ -821,6 +909,54 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 	);
 }
 
+function ImagesContent({ state, size }: { state: TuiState; size: Size }) {
+	const mode = layoutMode(size);
+	const rows = contentRows(size);
+	const image = selectedImage(state);
+	const detail = (
+		<ImageDetail
+			image={image}
+			marked={image !== null && state.selectedImageIds.includes(image.id)}
+		/>
+	);
+	if (mode === 'narrow') {
+		return (
+			<Pane focused grow>
+				{state.detailOpen ? (
+					detail
+				) : (
+					<ImageList
+						images={state.images}
+						selectedId={state.selectedImageId}
+						markedIds={state.selectedImageIds}
+						focused
+						visibleRows={rows}
+					/>
+				)}
+			</Pane>
+		);
+	}
+	return (
+		<Box flexGrow={1} flexDirection="row">
+			<Pane
+				focused={state.focusedPane === 'list'}
+				width={resourceListPaneWidth(size)}
+			>
+				<ImageList
+					images={state.images}
+					selectedId={state.selectedImageId}
+					markedIds={state.selectedImageIds}
+					focused={state.focusedPane === 'list'}
+					visibleRows={rows}
+				/>
+			</Pane>
+			<Pane focused={state.focusedPane === 'detail'} grow>
+				{detail}
+			</Pane>
+		</Box>
+	);
+}
+
 function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
 	const mode = layoutMode(size);
 	const rows = contentRows(size);
@@ -843,7 +979,10 @@ function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
 	}
 	return (
 		<Box flexGrow={1} flexDirection="row">
-			<Pane focused={state.focusedPane === 'list'} width={listPaneWidth(size)}>
+			<Pane
+				focused={state.focusedPane === 'list'}
+				width={resourceListPaneWidth(size)}
+			>
 				<ContainerList
 					containers={state.containers}
 					selectedId={state.selectedContainerId}

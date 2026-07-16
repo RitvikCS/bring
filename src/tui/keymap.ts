@@ -25,6 +25,7 @@ export interface KeyContext {
 		| 'confirm-remove'
 		| 'confirm-rebuild'
 		| 'confirm-container-remove'
+		| 'confirm-image-remove'
 		| null;
 	logViewOpen: boolean;
 	operationRunning: boolean;
@@ -45,6 +46,8 @@ export type TuiCommand =
 	| { kind: 'open-shell' }
 	| { kind: 'open-logs' }
 	| { kind: 'request-remove' }
+	| { kind: 'toggle-selection' }
+	| { kind: 'prune-unused' }
 	| { kind: 'open-help' }
 	| { kind: 'close-modal' }
 	| { kind: 'confirm-modal' }
@@ -81,7 +84,8 @@ export function keyToCommand(
 	if (
 		context.modal === 'confirm-remove' ||
 		context.modal === 'confirm-rebuild' ||
-		context.modal === 'confirm-container-remove'
+		context.modal === 'confirm-container-remove' ||
+		context.modal === 'confirm-image-remove'
 	) {
 		if (key.return === true) {
 			return { kind: 'confirm-modal' };
@@ -193,6 +197,10 @@ export function keyToCommand(
 			return { kind: 'open-logs' };
 		case 'x':
 			return { kind: 'request-remove' };
+		case ' ':
+			return { kind: 'toggle-selection' };
+		case 'p':
+			return { kind: 'prune-unused' };
 		case 'q':
 			return { kind: 'quit' };
 		default:

@@ -23,6 +23,11 @@ export function listPaneWidth(size: Size): number {
 	return Math.min(Math.max(Math.round(size.columns * 0.32), 24), 40);
 }
 
+/** Resource names and size/usage metadata need more room than workspace names. */
+export function resourceListPaneWidth(size: Size): number {
+	return Math.min(Math.max(Math.round(size.columns * 0.46), 36), 64);
+}
+
 /** Rows inside a content pane: header + status bar + pane borders. */
 export function contentRows(size: Size): number {
 	return Math.max(size.rows - 4, 3);

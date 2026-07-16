@@ -2,6 +2,7 @@ import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import type { DoctorReport } from '../../src/application/doctor.js';
 import { App, AppView } from '../../src/tui/App.js';
+import { formatBytes } from '../../src/tui/ImagesPane.js';
 import type { TuiEnvironment } from '../../src/tui/load.js';
 import {
 	INITIAL_STATE,
@@ -10,7 +11,11 @@ import {
 	type TuiState,
 	type TuiWorkspace,
 } from '../../src/tui/state.js';
-import { makeContainer, makeWorkspace } from '../helpers/tui-fixtures.js';
+import {
+	makeContainer,
+	makeImage,
+	makeWorkspace,
+} from '../helpers/tui-fixtures.js';
 
 // Frame tests at pinned sizes (P1-33/34/36/37/39/40/41/43). Input
 // simulation through fake stdin is unreliable on Ink 7, so behavior is
@@ -54,6 +59,7 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 		shell: () => Promise.reject(new Error('not in this test')),
 		containerShell: () => Promise.reject(new Error('not in this test')),
 		mutateContainer: () => Promise.reject(new Error('not in this test')),
+		removeImages: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
 		...overrides,
 	};
@@ -114,16 +120,19 @@ describe('chrome', () => {
 		);
 		expect(frame).toContain('No Dev Container resources');
 		expect(frame).toContain('positively identified');
-		const images = view(
+		const profiles = view(
 			stateFrom(
 				[{ type: 'move-section', delta: 1 }],
 				stateFrom(
 					[{ type: 'move-section', delta: 1 }],
-					ready([makeWorkspace('a', 'running')]),
+					stateFrom(
+						[{ type: 'move-section', delta: 1 }],
+						ready([makeWorkspace('a', 'running')]),
+					),
 				),
 			),
 		);
-		expect(images).toContain('arrives in a later phase');
+		expect(profiles).toContain('arrives in a later phase');
 	});
 });
 
@@ -158,6 +167,66 @@ describe('Containers section (§12.4/§12.5)', () => {
 		expect(list).not.toContain('primary devcontainer');
 		const detail = view(stateFrom([{ type: 'open-detail' }], state), NARROW);
 		expect(detail).toContain('primary devcontainer');
+	});
+});
+
+describe('Images section (§12.6)', () => {
+	function imagesState() {
+		return stateFrom([
+			{
+				type: 'loaded',
+				workspaces: [],
+				resources: {
+					containers: [],
+					images: [makeImage('base', true), makeImage('unused')],
+					refreshedAt: '',
+				},
+			},
+			{ type: 'move-section', delta: 1 },
+			{ type: 'move-section', delta: 1 },
+		]);
+	}
+
+	it('shows size, usage, impact, and selection state in wide mode', () => {
+		const frame = view(imagesState());
+		expect(frame).toContain('IMAGES 1/2 · 0 selected');
+		expect(frame).toContain('base:latest');
+		expect(frame).toContain('● In use');
+		expect(frame).toContain('Used by containers');
+		expect(frame).toContain('Workspace impact');
+	});
+
+	it('uses list/detail drill-down when narrow', () => {
+		const state = imagesState();
+		expect(view(state, NARROW)).not.toContain('Used by containers');
+		expect(view(stateFrom([{ type: 'open-detail' }], state), NARROW)).toContain(
+			'Used by containers',
+		);
+	});
+
+	it('renders one batch confirmation with an upper-bound disclaimer', () => {
+		let state = imagesState();
+		state = stateFrom(
+			[
+				{ type: 'move-selection', delta: 1 },
+				{ type: 'toggle-image-selection' },
+				{ type: 'open-confirm-image-remove' },
+			],
+			state,
+		);
+		const frame = view(state);
+		expect(frame).toContain('Remove 1 image?');
+		expect(frame).toContain('Up to 1.0 GB may be recovered.');
+		expect(frame).toContain('actual recovery may be lower');
+		expect(frame).toContain(
+			'Containers, volumes, and source files are not touched.',
+		);
+	});
+
+	it('formats exact byte sizes with compact decimal units', () => {
+		expect(formatBytes(0)).toBe('0 B');
+		expect(formatBytes(1250)).toBe('1.3 kB');
+		expect(formatBytes(2_730_000_000)).toBe('2.7 GB');
 	});
 });
 

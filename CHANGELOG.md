@@ -26,6 +26,14 @@ follow [Semantic Versioning](https://semver.org/).
   stops only that container, and `x` opens a confirmation before stopping and
   removing it. Mutations share the workspace operation lock, never force
   removal, and explicitly preserve images, volumes, and source files.
+- The Images section now shows exact sizes, creation age, tags, dangling state,
+  every container use, and related workspace impact for positively identified
+  Dev Container images. `Space` marks removable images, `x` confirms one
+  selected batch, and `p` stages all unused Dev Container images for the same
+  review. In-use images cannot be selected, removal never uses `--force`, and
+  `--no-prune` prevents Docker from silently deleting unselected parent images.
+  Recovery is deliberately described as an upper bound because layers may be
+  shared.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

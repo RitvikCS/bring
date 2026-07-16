@@ -20,6 +20,11 @@ describe('helpText', () => {
 		expect(text).toContain('--json');
 	});
 
+	it('documents direct entry to the Phase 2 resource sections', () => {
+		expect(text).toContain('bring containers');
+		expect(text).toContain('bring images');
+	});
+
 	it('warns that remove deletes while down preserves', () => {
 		expect(text).toContain('DELETE');
 		expect(text).toContain('source files are never touched');

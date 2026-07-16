@@ -102,7 +102,7 @@ describe('docker adapter commands', () => {
 		expect(readFileSync(join(dir, 'argv'), 'utf8')).toBe('rm\na1\n');
 		await removeImages(bin, ['sha256:i1', 'sha256:i2']);
 		expect(readFileSync(join(dir, 'argv'), 'utf8')).toBe(
-			'image\nrm\nsha256:i1\nsha256:i2\n',
+			'image\nrm\n--no-prune\nsha256:i1\nsha256:i2\n',
 		);
 	});
 

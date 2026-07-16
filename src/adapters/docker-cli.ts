@@ -207,7 +207,7 @@ export async function removeImages(
 	ids: readonly string[],
 	options: RunOptions = {},
 ): Promise<DockerResult<void>> {
-	return mutate(executable, ['image', 'rm', ...ids], options);
+	return mutate(executable, ['image', 'rm', '--no-prune', ...ids], options);
 }
 
 async function mutate(
