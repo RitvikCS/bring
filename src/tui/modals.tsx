@@ -76,6 +76,14 @@ export function ConfirmImageRemove({
 			<Box marginTop={1} flexDirection="column">
 				<Text>Up to {formatBytes(upperBound)} may be recovered.</Text>
 				<Text dimColor>Shared layers mean actual recovery may be lower.</Text>
+				{images.slice(0, 3).map((image) => (
+					<Text key={image.id} wrap="truncate-middle">
+						• {image.displayName}
+					</Text>
+				))}
+				{images.length > 3 && (
+					<Text dimColor>…and {images.length - 3} more</Text>
+				)}
 				{workspaces.length > 0 && (
 					<Text>Affected workspaces may rebuild: {workspaces.join(', ')}</Text>
 				)}

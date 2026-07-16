@@ -104,6 +104,16 @@ export function realEnvironment(
 		load: async (options) => {
 			const ctx = contextFor(() => {});
 			const storedState = loadState(stateFile);
+			const here = resolveTarget('.', { cwd, stateFile }).result;
+			const knownWorkspacePaths = storedState.workspaces.map(
+				(workspace) => workspace.path,
+			);
+			if (
+				here.outcome === 'resolved' &&
+				!knownWorkspacePaths.includes(here.workspace.rootPath)
+			) {
+				knownWorkspacePaths.push(here.workspace.rootPath);
+			}
 			const resourceResult: ResourceInventoryResult =
 				ctx === null
 					? {
@@ -118,9 +128,7 @@ export function realEnvironment(
 							dockerExe: ctx.dockerExe,
 							env,
 							includeImages: options?.includeImages,
-							knownWorkspacePaths: storedState.workspaces.map(
-								(workspace) => workspace.path,
-							),
+							knownWorkspacePaths,
 						});
 			const resources = resourceResult.ok
 				? resourceResult.inventory
@@ -132,7 +140,6 @@ export function realEnvironment(
 			// First-contact affordance: if the directory the TUI was opened
 			// from has a devcontainer config but was never brought up, list
 			// it anyway — an empty screen in a valid project is a dead end.
-			const here = resolveTarget('.', { cwd, stateFile }).result;
 			if (
 				here.outcome === 'resolved' &&
 				!listed.some((w) => w.ref.rootPath === here.workspace.rootPath)

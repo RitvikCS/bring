@@ -29,9 +29,10 @@ follow [Semantic Versioning](https://semver.org/).
 - The Images section now shows exact sizes, creation age, tags, dangling state,
   every container use, and related workspace impact for positively identified
   Dev Container images. `Space` marks removable images, `x` confirms one
-  selected batch, and `p` stages all unused Dev Container images for the same
-  review. In-use images cannot be selected, removal never uses `--force`, and
-  `--no-prune` prevents Docker from silently deleting unselected parent images.
+  selected batch by name, and `p` stages all unused Dev Container images for
+  the same review. In-use images cannot be selected, removal never uses
+  `--force`, and `--no-prune` prevents Docker from silently deleting unselected
+  parent images.
   Recovery is deliberately described as an upper bound because layers may be
   shared.
 - `/` now opens a live smart-case filter in Containers and Images, with

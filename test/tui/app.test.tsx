@@ -217,6 +217,7 @@ describe('Images section (§12.6)', () => {
 		const frame = view(state);
 		expect(frame).toContain('Remove 1 image?');
 		expect(frame).toContain('Up to 1.0 GB may be recovered.');
+		expect(frame).toContain('• unused:latest');
 		expect(frame).toContain('actual recovery may be lower');
 		expect(frame).toContain(
 			'Containers, volumes, and source files are not touched.',
