@@ -28,6 +28,7 @@ describe('parseArgv', () => {
 		[['ls'], { kind: 'ls', json: false }],
 		[['ls', '--json'], { kind: 'ls', json: true }],
 		[['workspaces'], { kind: 'section', section: 'workspaces' }],
+		[['containers'], { kind: 'section', section: 'containers' }],
 		[['images'], { kind: 'section', section: 'images' }],
 	] as const)('routes %j to %j', (argv, expected) => {
 		expect(parseArgv(argv)).toEqual(expected);

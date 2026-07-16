@@ -47,6 +47,8 @@ import {
 	selectedWorkspace,
 	type TuiState,
 	type TuiWorkspace,
+	visibleContainers,
+	visibleImages,
 } from './state.js';
 import { WorkspaceDetail, WorkspaceList } from './WorkspacesPane.js';
 
@@ -427,6 +429,26 @@ export function App({
 					void refresh(next);
 					return;
 				}
+				case 'jump-section': {
+					const section = SECTIONS[command.index];
+					if (section === undefined) {
+						return;
+					}
+					dispatch({ type: 'set-section', section });
+					void refresh(section);
+					return;
+				}
+				case 'focus-next': {
+					const pane = current.focusedPane === 'list' ? 'detail' : 'list';
+					if (wide) {
+						dispatch({ type: 'focus-pane', pane });
+					} else if (current.detailOpen) {
+						dispatch({ type: 'back' });
+					} else {
+						dispatch({ type: 'open-detail' });
+					}
+					return;
+				}
 				case 'focus-pane':
 					if (wide) {
 						dispatch({ type: 'focus-pane', pane: command.pane });
@@ -687,6 +709,24 @@ export function App({
 						}
 					}
 					return;
+				case 'open-filter':
+					dispatch({ type: 'open-filter' });
+					return;
+				case 'filter-input':
+					dispatch({ type: 'filter-input', text: command.text });
+					return;
+				case 'filter-backspace':
+					dispatch({ type: 'filter-backspace' });
+					return;
+				case 'apply-filter':
+					dispatch({ type: 'apply-filter' });
+					return;
+				case 'cancel-filter':
+					dispatch({ type: 'cancel-filter' });
+					return;
+				case 'clear-filter':
+					dispatch({ type: 'clear-filter' });
+					return;
 			}
 		},
 		[
@@ -716,6 +756,11 @@ export function App({
 					current.operation.result === undefined) ||
 				current.resourceOperation !== null,
 			operationSettled: current.operation?.result !== undefined,
+			filtering: current.filterInput !== null,
+			filterActive:
+				(current.section === 'containers' || current.section === 'images') &&
+				current.filters[current.section] !== '',
+			detailOpen: current.detailOpen,
 		});
 		if (command !== null) {
 			execute(command);
@@ -913,6 +958,7 @@ function ImagesContent({ state, size }: { state: TuiState; size: Size }) {
 	const mode = layoutMode(size);
 	const rows = contentRows(size);
 	const image = selectedImage(state);
+	const images = visibleImages(state);
 	const detail = (
 		<ImageDetail
 			image={image}
@@ -926,7 +972,9 @@ function ImagesContent({ state, size }: { state: TuiState; size: Size }) {
 					detail
 				) : (
 					<ImageList
-						images={state.images}
+						images={images}
+						totalCount={state.images.length}
+						filterQuery={state.filters.images}
 						selectedId={state.selectedImageId}
 						markedIds={state.selectedImageIds}
 						focused
@@ -943,7 +991,9 @@ function ImagesContent({ state, size }: { state: TuiState; size: Size }) {
 				width={resourceListPaneWidth(size)}
 			>
 				<ImageList
-					images={state.images}
+					images={images}
+					totalCount={state.images.length}
+					filterQuery={state.filters.images}
 					selectedId={state.selectedImageId}
 					markedIds={state.selectedImageIds}
 					focused={state.focusedPane === 'list'}
@@ -961,6 +1011,7 @@ function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
 	const mode = layoutMode(size);
 	const rows = contentRows(size);
 	const selected = selectedContainer(state);
+	const containers = visibleContainers(state);
 	if (mode === 'narrow') {
 		return (
 			<Pane focused grow>
@@ -968,7 +1019,9 @@ function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
 					<ContainerDetail container={selected} />
 				) : (
 					<ContainerList
-						containers={state.containers}
+						containers={containers}
+						totalCount={state.containers.length}
+						filterQuery={state.filters.containers}
 						selectedId={state.selectedContainerId}
 						focused
 						visibleRows={rows}
@@ -984,7 +1037,9 @@ function ContainersContent({ state, size }: { state: TuiState; size: Size }) {
 				width={resourceListPaneWidth(size)}
 			>
 				<ContainerList
-					containers={state.containers}
+					containers={containers}
+					totalCount={state.containers.length}
+					filterQuery={state.filters.containers}
 					selectedId={state.selectedContainerId}
 					focused={state.focusedPane === 'list'}
 					visibleRows={rows}
@@ -1031,25 +1086,41 @@ function Pane({
 
 function StatusBar({ state, size }: { state: TuiState; size: Size }) {
 	const hints: readonly (readonly [string, string])[] =
-		state.logView !== null
+		state.filterInput !== null
 			? [
-					['j/k', 'scroll'],
-					['Esc', 'back'],
+					['Enter', 'apply'],
+					['Esc', 'cancel'],
 				]
-			: state.modal !== null
-				? [['Esc', 'close']]
-				: [
-						['h/l', 'tabs'],
-						['j/k', 'select'],
-						['⏎', 'action'],
-						['?', 'help'],
-						['q', 'quit'],
-					];
+			: state.logView !== null
+				? [
+						['j/k', 'scroll'],
+						['Esc', 'back'],
+					]
+				: state.modal !== null
+					? [['Esc', 'close']]
+					: state.section === 'containers' || state.section === 'images'
+						? [
+								['j/k', 'select'],
+								['⏎', 'inspect'],
+								['/', 'filter'],
+								['?', 'help'],
+								['q', 'quit'],
+							]
+						: [
+								['h/l', 'tabs'],
+								['j/k', 'select'],
+								['⏎', 'action'],
+								['?', 'help'],
+								['q', 'quit'],
+							];
 	const hintsWidth = hints.reduce(
 		(n, [k, l]) => n + k.length + l.length + 4,
 		0,
 	);
-	const message = state.statusMessage;
+	const message =
+		state.filterInput === null
+			? state.statusMessage
+			: `Filter ${sectionTitle(state.filterInput.section)}: /${state.filterInput.draft}█`;
 	const room = Math.max(size.columns - hintsWidth - 4, 8);
 	return (
 		<Box paddingX={1} justifyContent="space-between">

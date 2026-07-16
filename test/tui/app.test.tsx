@@ -228,6 +228,20 @@ describe('Images section (§12.6)', () => {
 		expect(formatBytes(1250)).toBe('1.3 kB');
 		expect(formatBytes(2_730_000_000)).toBe('2.7 GB');
 	});
+
+	it('shows a live filter prompt and match count', () => {
+		let state = imagesState();
+		state = stateFrom(
+			[{ type: 'open-filter' }, { type: 'filter-input', text: 'unused' }],
+			state,
+		);
+		const frame = view(state);
+		expect(frame).toContain('1/1 · 0 selected · 1/2 match');
+		expect(frame).toContain('Filter /unused');
+		expect(frame).toContain('Filter Images: /unused█');
+		expect(frame).toContain('Enter apply');
+		expect(frame).toContain('Esc cancel');
+	});
 });
 
 describe('detail variants (§12.1, §12.3)', () => {
@@ -373,7 +387,8 @@ describe('modals (P1-40)', () => {
 			),
 		);
 		expect(frame).toContain('Keyboard help');
-		expect(frame).toContain('removal confirmation');
+		expect(frame).toContain('confirmed removal');
+		expect(frame).toContain('filter Containers or Images');
 	});
 
 	it('rebuild confirmation warns about the cost before anything runs', () => {

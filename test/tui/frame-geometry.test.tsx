@@ -98,4 +98,28 @@ describe('frame geometry', () => {
 			expect(openRows, `open right border at ${columns} cols`).toEqual([]);
 		}
 	});
+
+	it('folds resource views cleanly through the 60-column floor', () => {
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: {
+				containers: [],
+				images: [makeImage('a-very-long-devcontainer-image-reference', false)],
+				refreshedAt: '',
+			},
+		});
+		state = reduce(state, { type: 'set-section', section: 'images' });
+		for (const columns of [60, 61, 70, 80, 89]) {
+			const instance = render(
+				<AppView state={state} size={{ columns, rows: 18 }} version="0.0.0" />,
+			);
+			const lines = (instance.lastFrame() ?? '').split('\n');
+			instance.unmount();
+			expect(
+				lines.filter((line) => stringWidth(line) > columns),
+				`narrow overflow at ${columns} cols`,
+			).toEqual([]);
+		}
+	});
 });

@@ -6,12 +6,16 @@ import { relativeTime } from './state.js';
 
 export function ImageList({
 	images,
+	totalCount,
+	filterQuery,
 	selectedId,
 	markedIds,
 	focused,
 	visibleRows,
 }: {
 	images: readonly DevContainerImageResource[];
+	totalCount: number;
+	filterQuery: string;
 	selectedId: string | null;
 	markedIds: readonly string[];
 	focused: boolean;
@@ -22,7 +26,9 @@ export function ImageList({
 			<Box flexDirection="column" gap={1}>
 				<Text bold>IMAGES</Text>
 				<Text dimColor>
-					No Dev Container images found. Bring ignores unrelated Docker images.
+					{filterQuery !== '' && totalCount > 0
+						? `No matches for /${filterQuery}. Press Esc to clear the filter.`
+						: 'No Dev Container images found. Bring ignores unrelated Docker images.'}
 				</Text>
 				<KeyHints hints={[['r', 'Refresh']]} />
 			</Box>
@@ -32,7 +38,7 @@ export function ImageList({
 		images.findIndex((image) => image.id === selectedId),
 		0,
 	);
-	const rows = Math.max(visibleRows - 2, 1);
+	const rows = Math.max(visibleRows - (filterQuery === '' ? 2 : 3), 1);
 	const start = Math.min(
 		Math.max(selectedIndex - Math.floor(rows / 2), 0),
 		Math.max(images.length - rows, 0),
@@ -43,8 +49,14 @@ export function ImageList({
 				IMAGES{' '}
 				<Text dimColor>
 					{selectedIndex + 1}/{images.length} · {markedIds.length} selected
+					{filterQuery === '' ? '' : ` · ${images.length}/${totalCount} match`}
 				</Text>
 			</Text>
+			{filterQuery !== '' && (
+				<Text dimColor wrap="truncate">
+					Filter /{filterQuery}
+				</Text>
+			)}
 			<Text dimColor> IMAGE · SIZE · USAGE</Text>
 			{images.slice(start, start + rows).map((image) => {
 				const selected = image.id === selectedId;

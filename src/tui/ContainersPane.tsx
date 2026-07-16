@@ -6,11 +6,15 @@ import { relativeTime } from './state.js';
 
 export function ContainerList({
 	containers,
+	totalCount,
+	filterQuery,
 	selectedId,
 	focused,
 	visibleRows,
 }: {
 	containers: readonly DevContainerResource[];
+	totalCount: number;
+	filterQuery: string;
 	selectedId: string | null;
 	focused: boolean;
 	visibleRows: number;
@@ -20,8 +24,9 @@ export function ContainerList({
 			<Box flexDirection="column" gap={1}>
 				<Text bold>CONTAINERS</Text>
 				<Text dimColor>
-					No Dev Container resources found. Bring only shows positively
-					identified containers.
+					{filterQuery !== '' && totalCount > 0
+						? `No matches for /${filterQuery}. Press Esc to clear the filter.`
+						: 'No Dev Container resources found. Bring only shows positively identified containers.'}
 				</Text>
 				<KeyHints hints={[['r', 'Refresh']]} />
 			</Box>
@@ -31,7 +36,7 @@ export function ContainerList({
 		containers.findIndex((container) => container.id === selectedId),
 		0,
 	);
-	const rows = Math.max(visibleRows - 2, 1);
+	const rows = Math.max(visibleRows - (filterQuery === '' ? 2 : 3), 1);
 	const start = Math.min(
 		Math.max(selectedIndex - Math.floor(rows / 2), 0),
 		Math.max(containers.length - rows, 0),
@@ -42,8 +47,16 @@ export function ContainerList({
 				CONTAINERS{' '}
 				<Text dimColor>
 					{selectedIndex + 1}/{containers.length}
+					{filterQuery === ''
+						? ''
+						: ` · ${containers.length}/${totalCount} match`}
 				</Text>
 			</Text>
+			{filterQuery !== '' && (
+				<Text dimColor wrap="truncate">
+					Filter /{filterQuery}
+				</Text>
+			)}
 			<Text dimColor>CONTAINER · WORKSPACE</Text>
 			{containers.slice(start, start + rows).map((container) => {
 				const selected = container.id === selectedId;

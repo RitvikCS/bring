@@ -34,6 +34,11 @@ follow [Semantic Versioning](https://semver.org/).
   `--no-prune` prevents Docker from silently deleting unselected parent images.
   Recovery is deliberately described as an upper bound because layers may be
   shared.
+- `/` now opens a live smart-case filter in Containers and Images, with
+  match/total counts, Enter to keep the query, Esc to cancel while editing,
+  and Esc from the filtered list to clear it. Number keys `1`–`4` now jump to
+  the numbered top-level sections and Tab cycles list/detail focus, alongside
+  the existing Vim, arrow, and Ctrl+H/Ctrl+L navigation.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

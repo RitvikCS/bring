@@ -15,6 +15,7 @@ export interface KeyInfo {
 	pageUp?: boolean;
 	pageDown?: boolean;
 	backspace?: boolean;
+	tab?: boolean;
 }
 
 /** The parts of the UI situation that change what a key means. */
@@ -31,12 +32,17 @@ export interface KeyContext {
 	operationRunning: boolean;
 	/** An operation pane is showing a settled result awaiting dismissal. */
 	operationSettled: boolean;
+	filtering: boolean;
+	filterActive: boolean;
+	detailOpen: boolean;
 }
 
 export type TuiCommand =
 	| { kind: 'quit' }
 	| { kind: 'move-selection'; delta: 1 | -1 }
 	| { kind: 'move-section'; delta: 1 | -1 }
+	| { kind: 'jump-section'; index: number }
+	| { kind: 'focus-next' }
 	| { kind: 'focus-pane'; pane: 'list' | 'detail' }
 	| { kind: 'primary' }
 	| { kind: 'back' }
@@ -48,6 +54,12 @@ export type TuiCommand =
 	| { kind: 'request-remove' }
 	| { kind: 'toggle-selection' }
 	| { kind: 'prune-unused' }
+	| { kind: 'open-filter' }
+	| { kind: 'filter-input'; text: string }
+	| { kind: 'filter-backspace' }
+	| { kind: 'apply-filter' }
+	| { kind: 'cancel-filter' }
+	| { kind: 'clear-filter' }
 	| { kind: 'open-help' }
 	| { kind: 'close-modal' }
 	| { kind: 'confirm-modal' }
@@ -140,6 +152,25 @@ export function keyToCommand(
 		return null;
 	}
 
+	if (context.filtering) {
+		if (key.return === true) {
+			return { kind: 'apply-filter' };
+		}
+		if (key.escape === true) {
+			return { kind: 'cancel-filter' };
+		}
+		if (key.backspace === true) {
+			return { kind: 'filter-backspace' };
+		}
+		return input !== '' && key.ctrl !== true
+			? { kind: 'filter-input', text: input }
+			: null;
+	}
+
+	if (context.filterActive && !context.detailOpen && key.escape === true) {
+		return { kind: 'clear-filter' };
+	}
+
 	// Navigation is always available while ready.
 	if (input === 'j' || key.downArrow === true) {
 		return { kind: 'move-selection', delta: 1 };
@@ -154,6 +185,12 @@ export function keyToCommand(
 	}
 	if (key.ctrl === true && input === 'l') {
 		return { kind: 'focus-pane', pane: 'detail' };
+	}
+	if (key.tab === true) {
+		return { kind: 'focus-next' };
+	}
+	if (/^[1-4]$/.test(input)) {
+		return { kind: 'jump-section', index: Number(input) - 1 };
 	}
 	if (input === 'h' || key.leftArrow === true) {
 		return { kind: 'move-section', delta: -1 };
@@ -201,6 +238,8 @@ export function keyToCommand(
 			return { kind: 'toggle-selection' };
 		case 'p':
 			return { kind: 'prune-unused' };
+		case '/':
+			return { kind: 'open-filter' };
 		case 'q':
 			return { kind: 'quit' };
 		default:

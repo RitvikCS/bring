@@ -14,6 +14,9 @@ const READY: KeyContext = {
 	logViewOpen: false,
 	operationRunning: false,
 	operationSettled: false,
+	filtering: false,
+	filterActive: false,
+	detailOpen: false,
 };
 
 const key = (partial: KeyInfo = {}): KeyInfo => partial;
@@ -54,6 +57,16 @@ describe('keymap: ready screen', () => {
 		expect(keyToCommand('', key({ rightArrow: true }), READY)).toEqual({
 			kind: 'move-section',
 			delta: 1,
+		});
+	});
+
+	it('jumps with numbered tabs and cycles pane focus with Tab', () => {
+		expect(keyToCommand('3', key(), READY)).toEqual({
+			kind: 'jump-section',
+			index: 2,
+		});
+		expect(keyToCommand('', key({ tab: true }), READY)).toEqual({
+			kind: 'focus-next',
 		});
 	});
 
@@ -100,7 +113,42 @@ describe('keymap: ready screen', () => {
 
 	it('ignores unbound keys', () => {
 		expect(keyToCommand('z', key(), READY)).toBeNull();
-		expect(keyToCommand('1', key(), READY)).toBeNull();
+	});
+});
+
+describe('keymap: live resource filter', () => {
+	it('opens with slash, accepts text, and applies or cancels', () => {
+		expect(keyToCommand('/', key(), READY)).toEqual({ kind: 'open-filter' });
+		const filtering: KeyContext = { ...READY, filtering: true };
+		expect(keyToCommand('api', key(), filtering)).toEqual({
+			kind: 'filter-input',
+			text: 'api',
+		});
+		expect(keyToCommand('', key({ backspace: true }), filtering)).toEqual({
+			kind: 'filter-backspace',
+		});
+		expect(keyToCommand('', key({ return: true }), filtering)).toEqual({
+			kind: 'apply-filter',
+		});
+		expect(keyToCommand('', key({ escape: true }), filtering)).toEqual({
+			kind: 'cancel-filter',
+		});
+	});
+
+	it('Esc clears an applied filter from a list but backs out of detail', () => {
+		expect(
+			keyToCommand('', key({ escape: true }), {
+				...READY,
+				filterActive: true,
+			}),
+		).toEqual({ kind: 'clear-filter' });
+		expect(
+			keyToCommand('', key({ escape: true }), {
+				...READY,
+				filterActive: true,
+				detailOpen: true,
+			}),
+		).toEqual({ kind: 'back' });
 	});
 });
 

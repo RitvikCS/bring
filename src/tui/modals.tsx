@@ -11,19 +11,15 @@ import type { TuiWorkspace } from './state.js';
 // stable while making it unmistakable that keys now talk to the modal.
 
 const HELP_ROWS: readonly [string, string][] = [
-	['h/l', 'previous/next section'],
-	['j/k', 'previous/next item'],
-	['ctrl+h/l', 'focus left/right pane'],
-	['Enter', 'primary action / open detail'],
-	['u/d', 'workspace up/down · container stop with d'],
-	['r', 'rebuild workspace / refresh resources'],
-	['e', 'open workspace or container shell'],
-	['L', 'latest log'],
-	['x', 'removal confirmation'],
-	['Space', 'select image for batch removal'],
-	['p', 'review all unused images for pruning'],
-	['Esc', 'close / back'],
-	['q', 'quit'],
+	['1-4 · h/l', 'jump to / cycle sections'],
+	['j/k · ↑/↓', 'previous / next item'],
+	['Tab · C-h/l', 'cycle / directly focus panes'],
+	['Enter · Space', 'inspect / select image'],
+	['u · d · e', 'workspace up · down/stop · shell'],
+	['r · L', 'rebuild/refresh · latest log'],
+	['x · p', 'confirmed removal · review unused images'],
+	['/', 'filter Containers or Images'],
+	['Esc · q · ?', 'back/close · quit · help'],
 ];
 
 export function HelpOverlay() {
@@ -39,7 +35,7 @@ export function HelpOverlay() {
 			<Box marginTop={1} flexDirection="column">
 				{HELP_ROWS.map(([keys, what]) => (
 					<Box key={keys}>
-						<Box width={11}>
+						<Box width={16} flexShrink={0}>
 							<Text color="cyan">{keys}</Text>
 						</Box>
 						<Text>{what}</Text>

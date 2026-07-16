@@ -6,9 +6,12 @@ import {
 	reduce,
 	relativeTime,
 	selectedWorkspace,
+	smartMatch,
 	statusSymbol,
 	type TuiState,
 	type TuiWorkspace,
+	visibleContainers,
+	visibleImages,
 } from '../../src/tui/state.js';
 import {
 	makeContainer,
@@ -148,6 +151,16 @@ describe('selection movement', () => {
 		state = reduce(state, { type: 'move-selection', delta: 1 });
 		expect(state.selectedImageId).toBe('sha256:second');
 	});
+
+	it('supports direct numbered-section state changes', () => {
+		const state = reduce(readyState([]), {
+			type: 'set-section',
+			section: 'images',
+		});
+		expect(state.section).toBe('images');
+		expect(state.focusedPane).toBe('list');
+		expect(state.detailOpen).toBe(false);
+	});
 });
 
 describe('image multi-selection and prune review', () => {
@@ -201,6 +214,49 @@ describe('image multi-selection and prune review', () => {
 			},
 		});
 		expect(state.selectedImageIds).toEqual(['sha256:free']);
+	});
+});
+
+describe('resource filtering', () => {
+	it('uses smart case', () => {
+		expect(smartMatch('Interview-API', 'api')).toBe(true);
+		expect(smartMatch('Interview-API', 'API')).toBe(true);
+		expect(smartMatch('Interview-api', 'API')).toBe(false);
+	});
+
+	it('filters live, moves selection into results, and Esc restores the original', () => {
+		let state = reduce(INITIAL_STATE, {
+			type: 'loaded',
+			workspaces: [],
+			resources: {
+				containers: [
+					makeContainer('api', 'running', 'backend'),
+					makeContainer('web', 'running', 'frontend'),
+				],
+				images: [makeImage('python'), makeImage('node')],
+				refreshedAt: '',
+			},
+		});
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'open-filter' });
+		state = reduce(state, { type: 'filter-input', text: 'front' });
+		expect(visibleContainers(state).map((container) => container.name)).toEqual(
+			['web'],
+		);
+		expect(state.selectedContainerId).toBe('container-web');
+		state = reduce(state, { type: 'cancel-filter' });
+		expect(visibleContainers(state)).toHaveLength(2);
+
+		state = reduce(state, { type: 'move-section', delta: 1 });
+		state = reduce(state, { type: 'open-filter' });
+		state = reduce(state, { type: 'filter-input', text: 'node' });
+		expect(visibleImages(state).map((image) => image.displayName)).toEqual([
+			'node:latest',
+		]);
+		state = reduce(state, { type: 'apply-filter' });
+		expect(state.filters.images).toBe('node');
+		state = reduce(state, { type: 'clear-filter' });
+		expect(visibleImages(state)).toHaveLength(2);
 	});
 });
 

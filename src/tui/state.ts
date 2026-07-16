@@ -22,6 +22,7 @@ import type {
 // unit-testable without rendering a frame.
 
 export type Section = 'workspaces' | 'containers' | 'images' | 'profiles';
+export type ResourceSection = 'containers' | 'images';
 export const SECTIONS: readonly Section[] = [
 	'workspaces',
 	'containers',
@@ -65,6 +66,12 @@ export interface ResourceOperation {
 	resourceName: string;
 }
 
+export interface FilterInputState {
+	section: ResourceSection;
+	draft: string;
+	original: string;
+}
+
 export interface OperationProgress {
 	operation: OperationKind;
 	workspacePath: string;
@@ -99,6 +106,8 @@ export interface TuiState {
 	selectedImageId: string | null;
 	selectedImageIds: string[];
 	resourceProblem: BringProblem | null;
+	filters: Record<ResourceSection, string>;
+	filterInput: FilterInputState | null;
 	/** Wide layout: which pane has focus. Narrow: detail visible or not. */
 	focusedPane: 'list' | 'detail';
 	detailOpen: boolean;
@@ -124,6 +133,8 @@ export const INITIAL_STATE: TuiState = {
 	selectedImageId: null,
 	selectedImageIds: [],
 	resourceProblem: null,
+	filters: { containers: '', images: '' },
+	filterInput: null,
 	focusedPane: 'list',
 	detailOpen: false,
 	modal: null,
@@ -153,6 +164,7 @@ export type TuiAction =
 	| { type: 'retry-loading' }
 	| { type: 'move-selection'; delta: 1 | -1 }
 	| { type: 'move-section'; delta: 1 | -1 }
+	| { type: 'set-section'; section: Section }
 	| { type: 'focus-pane'; pane: 'list' | 'detail' }
 	| { type: 'open-detail' }
 	| { type: 'back' }
@@ -163,6 +175,12 @@ export type TuiAction =
 	| { type: 'toggle-image-selection' }
 	| { type: 'select-unused-images' }
 	| { type: 'open-confirm-image-remove' }
+	| { type: 'open-filter' }
+	| { type: 'filter-input'; text: string }
+	| { type: 'filter-backspace' }
+	| { type: 'apply-filter' }
+	| { type: 'cancel-filter' }
+	| { type: 'clear-filter' }
 	| { type: 'close-modal' }
 	| {
 			type: 'resource-operation-started';
@@ -255,6 +273,29 @@ export function selectedImages(state: TuiState): DevContainerImageResource[] {
 	);
 }
 
+export function visibleContainers(state: TuiState): DevContainerResource[] {
+	const query = state.filters.containers;
+	return state.containers.filter((container) =>
+		matchesContainer(container, query),
+	);
+}
+
+export function visibleImages(state: TuiState): DevContainerImageResource[] {
+	const query = state.filters.images;
+	return state.images.filter((image) => matchesImage(image, query));
+}
+
+/** Lowercase queries ignore case; any uppercase letter makes matching exact. */
+export function smartMatch(value: string, query: string): boolean {
+	if (query === '') {
+		return true;
+	}
+	const caseSensitive = query !== query.toLocaleLowerCase();
+	return caseSensitive
+		? value.includes(query)
+		: value.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+}
+
 export function reduce(state: TuiState, action: TuiAction): TuiState {
 	switch (action.type) {
 		case 'doctor-blocked':
@@ -312,10 +353,16 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			const stillThere = workspaces.some(
 				(w) => w.ref.rootPath === state.selectedPath,
 			);
-			const containerStillThere = resources.containers.some(
+			const visibleContainerResources = resources.containers.filter(
+				(container) => matchesContainer(container, state.filters.containers),
+			);
+			const visibleImageResources = resources.images.filter((image) =>
+				matchesImage(image, state.filters.images),
+			);
+			const containerStillThere = visibleContainerResources.some(
 				(container) => container.id === state.selectedContainerId,
 			);
-			const imageStillThere = resources.images.some(
+			const imageStillThere = visibleImageResources.some(
 				(image) => image.id === state.selectedImageId,
 			);
 			const selectedImageIds = state.selectedImageIds.filter((id) =>
@@ -334,11 +381,11 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				containers: resources.containers,
 				selectedContainerId: containerStillThere
 					? state.selectedContainerId
-					: (resources.containers[0]?.id ?? null),
+					: (visibleContainerResources[0]?.id ?? null),
 				images: resources.images,
 				selectedImageId: imageStillThere
 					? state.selectedImageId
-					: (resources.images[0]?.id ?? null),
+					: (visibleImageResources[0]?.id ?? null),
 				selectedImageIds,
 				resourceProblem:
 					action.resourceProblem !== undefined
@@ -348,23 +395,25 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 		}
 		case 'move-selection': {
 			if (state.section === 'containers') {
-				const index = state.containers.findIndex(
+				const containers = visibleContainers(state);
+				const index = containers.findIndex(
 					(container) => container.id === state.selectedContainerId,
 				);
-				const next = clampedIndex(index, action.delta, state.containers.length);
+				const next = clampedIndex(index, action.delta, containers.length);
 				return {
 					...state,
-					selectedContainerId: state.containers[next]?.id ?? null,
+					selectedContainerId: containers[next]?.id ?? null,
 				};
 			}
 			if (state.section === 'images') {
-				const index = state.images.findIndex(
+				const images = visibleImages(state);
+				const index = images.findIndex(
 					(image) => image.id === state.selectedImageId,
 				);
-				const next = clampedIndex(index, action.delta, state.images.length);
+				const next = clampedIndex(index, action.delta, images.length);
 				return {
 					...state,
-					selectedImageId: state.images[next]?.id ?? null,
+					selectedImageId: images[next]?.id ?? null,
 				};
 			}
 			const index = state.workspaces.findIndex(
@@ -387,8 +436,17 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				section: SECTIONS[next] as Section,
 				focusedPane: 'list',
 				detailOpen: false,
+				filterInput: null,
 			};
 		}
+		case 'set-section':
+			return {
+				...state,
+				section: action.section,
+				focusedPane: 'list',
+				detailOpen: false,
+				filterInput: null,
+			};
 		case 'focus-pane':
 			return { ...state, focusedPane: action.pane };
 		case 'open-detail':
@@ -491,6 +549,41 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				modal: { kind: 'confirm-image-remove', imageIds },
 			};
 		}
+		case 'open-filter': {
+			if (state.section !== 'containers' && state.section !== 'images') {
+				return state;
+			}
+			const query = state.filters[state.section];
+			return {
+				...state,
+				filterInput: {
+					section: state.section,
+					draft: query,
+					original: query,
+				},
+			};
+		}
+		case 'filter-input':
+			return state.filterInput === null
+				? state
+				: updateFilter(state, `${state.filterInput.draft}${action.text}`);
+		case 'filter-backspace':
+			return state.filterInput === null
+				? state
+				: updateFilter(
+						state,
+						[...state.filterInput.draft].slice(0, -1).join(''),
+					);
+		case 'apply-filter':
+			return { ...state, filterInput: null };
+		case 'cancel-filter':
+			return state.filterInput === null
+				? state
+				: finishFilter(state, state.filterInput.original);
+		case 'clear-filter':
+			return state.section === 'containers' || state.section === 'images'
+				? finishFilter(state, '')
+				: state;
 		case 'close-modal':
 			return { ...state, modal: null };
 		case 'resource-operation-started':
@@ -618,6 +711,87 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 		case 'status-message':
 			return { ...state, statusMessage: action.message };
 	}
+}
+
+function updateFilter(state: TuiState, draft: string): TuiState {
+	const input = state.filterInput;
+	if (input === null) {
+		return state;
+	}
+	const filters = { ...state.filters, [input.section]: draft };
+	const next = {
+		...state,
+		filters,
+		filterInput: { ...input, draft },
+	};
+	if (input.section === 'containers') {
+		const visible = visibleContainers(next);
+		return {
+			...next,
+			selectedContainerId: visible.some(
+				(container) => container.id === state.selectedContainerId,
+			)
+				? state.selectedContainerId
+				: (visible[0]?.id ?? null),
+		};
+	}
+	const visible = visibleImages(next);
+	return {
+		...next,
+		selectedImageId: visible.some((image) => image.id === state.selectedImageId)
+			? state.selectedImageId
+			: (visible[0]?.id ?? null),
+	};
+}
+
+function finishFilter(state: TuiState, query: string): TuiState {
+	let updated = state;
+	if (updated.filterInput === null) {
+		if (updated.section !== 'containers' && updated.section !== 'images') {
+			return state;
+		}
+		updated = {
+			...updated,
+			filterInput: {
+				section: updated.section,
+				draft: updated.filters[updated.section],
+				original: updated.filters[updated.section],
+			},
+		};
+	}
+	return { ...updateFilter(updated, query), filterInput: null };
+}
+
+function matchesContainer(
+	container: DevContainerResource,
+	query: string,
+): boolean {
+	return smartMatch(
+		[
+			container.name,
+			container.workspaceName,
+			container.statusText,
+			container.imageName,
+			container.serviceName ?? '',
+		].join(' '),
+		query,
+	);
+}
+
+function matchesImage(
+	image: DevContainerImageResource,
+	query: string,
+): boolean {
+	return smartMatch(
+		[
+			image.displayName,
+			...image.references,
+			...image.containerNames,
+			...image.workspaceNames,
+			image.inUse ? 'in use' : image.dangling ? 'dangling' : 'unused',
+		].join(' '),
+		query,
+	);
 }
 
 function emptyResources(): ResourceInventory {

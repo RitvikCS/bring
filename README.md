@@ -11,6 +11,8 @@ bring down           # stop it (containers kept for a fast restart)
 bring shell          # open a shell inside it (bring shell -- zsh works too)
 bring status         # what's running, which ports, which config
 bring ls             # every project bring knows, with live status
+bring containers     # inspect and act on Dev Container containers
+bring images         # review Dev Container image usage and cleanup
 bring . remove       # stop and DELETE devcontainer resources (asks first)
 bring ../api up      # any action works on any path
 bring doctor         # check that devcontainer CLI + Docker are ready
@@ -20,7 +22,7 @@ Every command also takes `--json` for scripting and `--verbose` for the raw
 underlying output.
 
 > **Status: early development.** Direct commands and the full-screen
-> Workspaces TUI (`bring` with no arguments) work end to end.
+> Workspaces, Containers, and Images sections work end to end.
 
 ## Why
 
@@ -78,14 +80,18 @@ configured project that was never brought up lists it too, marked
 
 ### The TUI in one paragraph
 
-`bring` opens an alternate-screen interface: workspaces on the left,
-detail (status, container age, ports, config, latest-log tail) on the
-right. `j`/`k` or arrows select a workspace, `u`/`d` bring it up/down,
-`e` opens a shell (the UI suspends, then repaints when you exit), `L`
-shows the full latest log, `r` rebuilds and `x` removes — both behind an
-explicit confirmation. `?` shows every binding, `q` quits. If `bring
-doctor` would fail, the TUI shows the diagnosis instead of letting
-operations fail confusingly later.
+`bring` opens an alternate-screen interface. Workspaces show lifecycle,
+ports, config, and logs; Containers exposes only resources positively tied
+to Dev Container workspaces (including Compose sidecars); Images exposes only
+images carrying Dev Container metadata or used by those containers. `j`/`k`
+or arrows select, `h`/`l` or `1`–`4` change sections, Tab changes pane focus,
+and `/` filters resource lists. Workspace actions remain `u`, `d`, `e`, `r`,
+`L`, and `x`. In Images, Space marks a removable image and `p` reviews all unused
+images; one confirmation shows the batch and an upper-bound space estimate.
+In-use images cannot be selected, image removal is never forced, and source
+files are never touched. `?` shows every binding and `q` quits. If `bring
+doctor` fails, the TUI shows the diagnosis instead of letting operations fail
+confusingly later.
 
 ## Where Bring keeps its state
 
