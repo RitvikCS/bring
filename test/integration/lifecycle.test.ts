@@ -14,6 +14,8 @@ import { bringDown } from '../../src/application/bring-down.js';
 import { bringUp } from '../../src/application/bring-up.js';
 import type { OperationContext } from '../../src/application/context.js';
 import { getSnapshot } from '../../src/application/get-status.js';
+import { removeImageResources } from '../../src/application/image-actions.js';
+import { listResources } from '../../src/application/list-resources.js';
 import { openShell } from '../../src/application/open-shell.js';
 import type { WorkspaceRef } from '../../src/core/types.js';
 import { workspaceIdentity } from '../../src/core/workspace-resolver.js';
@@ -73,16 +75,17 @@ function prepare(fixture: string): Project {
 	};
 	cleanups.push(async () => {
 		// Belt and braces: even if a test failed mid-way, no fixture
-		// container survives the run.
-		const listed = await runCommand(dockerExe, [
-			'ps',
-			'--all',
-			'--quiet',
-			'--filter',
-			`label=devcontainer.local_folder=${root}`,
-		]);
-		if (listed.outcome === 'ran') {
-			const ids = listed.result.stdout.split('\n').filter((s) => s !== '');
+		// container (including a Compose sidecar) survives the run.
+		const inventory = await listResources({
+			dockerExe,
+			env,
+			includeImages: false,
+			knownWorkspacePaths: [root],
+		});
+		if (inventory.ok) {
+			const ids = inventory.inventory.containers
+				.filter((container) => container.workspacePath === root)
+				.map((container) => container.id);
 			if (ids.length > 0) {
 				await runCommand(dockerExe, ['rm', '--force', ...ids]);
 			}
@@ -131,6 +134,19 @@ describe.runIf(RUN)('minimal fixture lifecycle (P1-44)', () => {
 			expect(removed.outcome).toBe('success');
 			const gone = await getSnapshot(ctx, ref);
 			expect(gone.ok && gone.snapshot.status).toBe('not-created');
+			const afterRemove = await listResources({
+				dockerExe: ctx.dockerExe,
+				env: ctx.env,
+				includeImages: false,
+				knownWorkspacePaths: [ref.rootPath],
+			});
+			expect(
+				afterRemove.ok
+					? afterRemove.inventory.containers.filter(
+							(container) => container.workspacePath === ref.rootPath,
+						)
+					: [afterRemove.problem],
+			).toEqual([]);
 
 			expect(readLatestLog(ctx.stateDir, ref.identity)).not.toBeNull();
 			expect(listFiles()).toEqual(filesBefore);
@@ -141,7 +157,7 @@ describe.runIf(RUN)('minimal fixture lifecycle (P1-44)', () => {
 
 describe.runIf(RUN)('compose fixture lifecycle (P1-45)', () => {
 	it(
-		'up → running → down → remove through the compose path',
+		'up → related app/sidecar inventory → down → remove',
 		async () => {
 			const { ctx, ref } = prepare('compose');
 
@@ -150,6 +166,36 @@ describe.runIf(RUN)('compose fixture lifecycle (P1-45)', () => {
 
 			const running = await getSnapshot(ctx, ref);
 			expect(running.ok && running.snapshot.status).toBe('running');
+
+			const inventory = await listResources({
+				dockerExe: ctx.dockerExe,
+				env: ctx.env,
+			});
+			expect(inventory.ok).toBe(true);
+			if (!inventory.ok) {
+				throw new Error(inventory.problem.summary);
+			}
+			const containers = inventory.inventory.containers.filter(
+				(container) => container.workspacePath === ref.rootPath,
+			);
+			expect(containers).toHaveLength(2);
+			expect(containers.map((container) => container.role).sort()).toEqual([
+				'primary',
+				'service',
+			]);
+			expect(
+				containers.find((container) => container.role === 'service')
+					?.serviceName,
+			).toBe('db');
+
+			const workspaceImage = inventory.inventory.images.find((image) =>
+				image.workspacePaths.includes(ref.rootPath),
+			);
+			expect(workspaceImage?.inUse).toBe(true);
+			if (workspaceImage !== undefined) {
+				const blocked = await removeImageResources(ctx, [workspaceImage]);
+				expect(blocked.ok).toBe(false);
+			}
 
 			const down = await bringDown(ctx, ref);
 			expect(down.outcome).toBe('success');

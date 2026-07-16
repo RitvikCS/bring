@@ -40,12 +40,30 @@ export function makeHarness(options: {
 	const binDir = makeBinDir();
 	const stateDir = mkdtempSync(join(tmpdir(), 'bring-op-state-'));
 	const argvFile = join(binDir, 'argv-log');
+	const psOutput = options.psOutput ?? '';
+	const inspectOutput = JSON.stringify(
+		psOutput
+			.split('\n')
+			.filter((line) => line.trim().startsWith('{'))
+			.map((line) => JSON.parse(line) as Record<string, string>)
+			.map((row) => ({
+				Id: row.ID ?? '',
+				Name: `/${row.Names ?? ''}`,
+				Created: '2026-07-16T12:00:00Z',
+				Image: `sha256:${row.Image ?? ''}`,
+				Config: {
+					Image: row.Image ?? '',
+					Labels: { 'devcontainer.local_folder': root },
+				},
+			})),
+	);
 
 	const dockerScript =
 		options.dockerScript ??
 		`printf '%s\\n' "docker $*" >> "${argvFile}"
-case "$1" in
-	ps) printf '%s\\n' '${options.psOutput ?? ''}' ;;
+case "$1 $2" in
+	"ps --all") printf '%s\\n' '${psOutput}' ;;
+	"container inspect") printf '%s\\n' '${inspectOutput}' ;;
 	*) : ;;
 esac`;
 	writeFakeBin(binDir, 'docker', dockerScript);

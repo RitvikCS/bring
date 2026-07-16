@@ -39,6 +39,14 @@ follow [Semantic Versioning](https://semver.org/).
   and Esc from the filtered list to clear it. Number keys `1`–`4` now jump to
   the numbered top-level sections and Tab cycles list/detail focus, alongside
   the existing Vim, arrow, and Ctrl+H/Ctrl+L navigation.
+
+### Fixed
+
+- Workspace status, down, and remove now include Docker Compose sidecars,
+  rather than acting only on the primary container carrying the upstream
+  workspace label. Registered Compose working-directory labels preserve the
+  relationship even if the primary disappeared first; real integration
+  coverage asserts that no app or sidecar survives removal.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

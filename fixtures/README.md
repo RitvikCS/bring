@@ -6,8 +6,8 @@ can be exercised through the actual Dev Containers CLI and Docker:
 
 - `minimal/` — single-container project on `debian:bookworm-slim`
   (P1-44: fast up/shell/down/remove).
-- `compose/` — the same, but through a Docker Compose file
-  (P1-45: lifecycle via the upstream CLI's compose path).
+- `compose/` — an app plus sidecar through Docker Compose (P1-45 lifecycle;
+  Phase 2 relationship inventory and cleanup coverage).
 - `failing/` — a `postCreateCommand` that always fails
   (P1-46: concise error classification and the captured log).
 

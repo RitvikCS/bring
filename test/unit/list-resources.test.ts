@@ -68,6 +68,29 @@ describe('identifyDevContainerResources', () => {
 			serviceName: 'db',
 		});
 	});
+
+	it('retains an orphaned Compose sidecar through a registered working directory', () => {
+		const resources = identifyDevContainerResources(
+			[
+				container('database', {
+					'com.docker.compose.project': 'project_devcontainer',
+					'com.docker.compose.project.working_dir': '/work/project',
+					'com.docker.compose.service': 'db',
+				}),
+				container('unrelated', {
+					'com.docker.compose.project': 'other',
+					'com.docker.compose.project.working_dir': '/work/other',
+				}),
+			],
+			['/work/project'],
+		);
+		expect(resources).toHaveLength(1);
+		expect(resources[0]).toMatchObject({
+			name: 'database',
+			workspacePath: '/work/project',
+			role: 'service',
+		});
+	});
 });
 
 describe('addImageImpact', () => {

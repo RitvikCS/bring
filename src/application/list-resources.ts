@@ -7,6 +7,7 @@ import type { BringProblem } from '../core/errors.js';
 import {
 	COMPOSE_PROJECT_LABEL,
 	COMPOSE_SERVICE_LABEL,
+	COMPOSE_WORKING_DIR_LABEL,
 	DEVCONTAINER_WORKSPACE_LABEL,
 	type DevContainerImageResource,
 	type DevContainerResource,
@@ -28,6 +29,8 @@ export async function listResources(options: {
 	now?: Date;
 	/** Image inspection is intentionally lazy; exact sizes can be expensive. */
 	includeImages?: boolean;
+	/** Registered roots let orphaned Compose sidecars retain their relationship. */
+	knownWorkspacePaths?: readonly string[];
 }): Promise<ResourceInventoryResult> {
 	const allContainers = await listAllContainers(options.dockerExe, {
 		env: options.env,
@@ -37,7 +40,10 @@ export async function listResources(options: {
 			`Docker could not inspect containers: ${allContainers.message}`,
 		);
 	}
-	const containers = identifyDevContainerResources(allContainers.value);
+	const containers = identifyDevContainerResources(
+		allContainers.value,
+		options.knownWorkspacePaths,
+	);
 	if (options.includeImages === false) {
 		return {
 			ok: true,
@@ -77,13 +83,23 @@ export async function listResources(options: {
  */
 export function identifyDevContainerResources(
 	all: readonly DockerContainerResource[],
+	knownWorkspacePaths: readonly string[] = [],
 ): DevContainerResource[] {
 	const composeWorkspaces = new Map<string, string>();
+	const known = new Set(knownWorkspacePaths);
 	for (const container of all) {
 		const workspace = container.labels[DEVCONTAINER_WORKSPACE_LABEL];
 		const project = container.labels[COMPOSE_PROJECT_LABEL];
 		if (workspace !== undefined && project !== undefined) {
 			composeWorkspaces.set(project, workspace);
+		}
+		const workingDir = container.labels[COMPOSE_WORKING_DIR_LABEL];
+		if (
+			project !== undefined &&
+			workingDir !== undefined &&
+			known.has(workingDir)
+		) {
+			composeWorkspaces.set(project, workingDir);
 		}
 	}
 	const resources: DevContainerResource[] = [];

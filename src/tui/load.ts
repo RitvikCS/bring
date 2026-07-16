@@ -103,6 +103,7 @@ export function realEnvironment(
 		doctor: () => runDoctor({ env }),
 		load: async (options) => {
 			const ctx = contextFor(() => {});
+			const storedState = loadState(stateFile);
 			const resourceResult: ResourceInventoryResult =
 				ctx === null
 					? {
@@ -117,11 +118,14 @@ export function realEnvironment(
 							dockerExe: ctx.dockerExe,
 							env,
 							includeImages: options?.includeImages,
+							knownWorkspacePaths: storedState.workspaces.map(
+								(workspace) => workspace.path,
+							),
 						});
 			const resources = resourceResult.ok
 				? resourceResult.inventory
 				: emptyInventory();
-			const entries = loadState(stateFile).workspaces;
+			const entries = storedState.workspaces;
 			const listed = entries.map((entry) =>
 				loadOne(resources, resourceResult.ok, stateDir, entry),
 			);
@@ -144,7 +148,7 @@ export function realEnvironment(
 				workspaces: listed,
 				resources,
 				resourceProblem: resourceResult.ok ? null : resourceResult.problem,
-				dotfilesRepository: loadState(stateFile).dotfilesRepository ?? null,
+				dotfilesRepository: storedState.dotfilesRepository ?? null,
 			};
 		},
 		up: (workspace, options, emit) =>

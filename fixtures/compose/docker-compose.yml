@@ -2,5 +2,10 @@ services:
   app:
     image: debian:bookworm-slim
     command: sleep infinity
+    depends_on:
+      - db
     volumes:
       - .:/workspace
+  db:
+    image: debian:bookworm-slim
+    command: sleep infinity

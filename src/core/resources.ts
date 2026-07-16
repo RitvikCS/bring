@@ -6,6 +6,8 @@ export const DEVCONTAINER_CONFIG_LABEL = 'devcontainer.config_file';
 export const DEVCONTAINER_METADATA_LABEL = 'devcontainer.metadata';
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
 export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
+export const COMPOSE_WORKING_DIR_LABEL =
+	'com.docker.compose.project.working_dir';
 
 /** One Docker container as returned by the inventory adapter. */
 export interface DockerContainerResource {
