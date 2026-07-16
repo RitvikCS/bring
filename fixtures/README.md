@@ -1,0 +1,25 @@
+# Integration fixtures (Phase 1G)
+
+Three deliberately tiny devcontainer projects used by
+`test/integration/lifecycle.test.ts` — they exist so Bring's real lifecycle
+can be exercised through the actual Dev Containers CLI and Docker:
+
+- `minimal/` — single-container project on `debian:bookworm-slim`
+  (P1-44: fast up/shell/down/remove).
+- `compose/` — the same, but through a Docker Compose file
+  (P1-45: lifecycle via the upstream CLI's compose path).
+- `failing/` — a `postCreateCommand` that always fails
+  (P1-46: concise error classification and the captured log).
+
+The integration tests copy each fixture to a temporary directory before
+running, so nothing here is ever registered in your real Bring state and
+container labels never point into the repository.
+
+Run them (needs Docker and the `devcontainer` CLI on PATH):
+
+```sh
+npm run test:integration
+```
+
+They are skipped in the normal `npm test` run — `BRING_INTEGRATION=1`
+enables them.

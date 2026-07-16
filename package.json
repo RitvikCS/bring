@@ -33,6 +33,7 @@
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"test": "vitest run",
+		"test:integration": "BRING_INTEGRATION=1 vitest run test/integration",
 		"test:watch": "vitest"
 	},
 	"dependencies": {

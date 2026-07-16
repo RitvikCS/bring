@@ -1,0 +1,4 @@
+{
+	"name": "bring-fixture-minimal",
+	"image": "debian:bookworm-slim"
+}

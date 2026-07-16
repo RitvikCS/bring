@@ -29,6 +29,14 @@ that introduced it.
   success, so later ups (CLI and TUI alike) apply it automatically.
   `--dotfiles none` skips a single run; a new URL replaces the remembered
   one (spec amendment A6). (`a6a56ad`)
+- Integration fixtures and a gated real-lifecycle test suite (Phase 1G,
+  P1-44/45/46): three tiny devcontainer projects under `fixtures/` (minimal
+  image, Docker Compose, deliberately failing `postCreateCommand`) and
+  `npm run test:integration`, which copies each to a temp directory and
+  drives up → idempotent up → exec → down → remove through the real Dev
+  Containers CLI and Docker, asserting source files stay untouched and the
+  failure case produces a concise problem plus a full captured log. Skipped
+  unless `BRING_INTEGRATION=1`.
 - First-contact affordance in the TUI: opening `bring` inside a project
   that has a devcontainer config but was never brought up now lists that
   folder (marked "this folder") instead of an empty screen — press `u` and
