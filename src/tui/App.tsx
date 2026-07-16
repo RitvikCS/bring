@@ -88,6 +88,7 @@ export function App({
 	// suspend cycle is Ink's sanctioned full redraw. Debounced so a drag
 	// resize causes one repaint, not dozens.
 	const firstSizeRef = useRef(true);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: size.columns/size.rows are triggers — the effect must re-run on resize without reading the values.
 	useEffect(() => {
 		if (sizeOverride !== undefined) {
 			return;

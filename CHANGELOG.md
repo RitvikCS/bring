@@ -2,11 +2,11 @@
 
 All notable changes to Bring are documented here, newest first. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
-follow [Semantic Versioning](https://semver.org/) once published. Until the
-first npm release everything accumulates under **Unreleased** with the commit
-that introduced it.
+follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-07-16
 
 ### Added
 

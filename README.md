@@ -20,8 +20,7 @@ Every command also takes `--json` for scripting and `--verbose` for the raw
 underlying output.
 
 > **Status: early development.** Direct commands and the full-screen
-> Workspaces TUI (`bring` with no arguments) work end to end. Not yet
-> published to npm — install from a clone for now (see Developing).
+> Workspaces TUI (`bring` with no arguments) work end to end.
 
 ## Why
 
@@ -54,9 +53,8 @@ it never installs them for you.
 ## Quickstart
 
 ```sh
-# 1. Install (from a clone, until the npm release)
-git clone https://github.com/RitvikCS/Bring && cd Bring/bring
-npm ci && npm run build && npm pack && npm install -g ./ritvikcs-bring-*.tgz
+# 1. Install
+npm install -g @ritvikcs/bring
 
 # 2. Check the ground under your feet
 bring doctor         # verifies the devcontainer CLI and Docker, with fixes
