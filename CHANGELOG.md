@@ -29,6 +29,13 @@ that introduced it.
   success, so later ups (CLI and TUI alike) apply it automatically.
   `--dotfiles none` skips a single run; a new URL replaces the remembered
   one (spec amendment A6). (`a6a56ad`)
+- README quickstart (Phase 1G, P1-48): install → doctor → first `up` →
+  shell → TUI walkthrough, plus what counts as a configured project and a
+  one-paragraph tour of the TUI. The Phase 1 exit gate was scripted and
+  run against the installed release candidate: 28/28 checks pass,
+  including missing-dependency diagnosis without stack traces, the full
+  lifecycle on a path with spaces reached through a symlink, single-
+  document `--json`, and ANSI-free piped output. (P1-49)
 - Integration fixtures and a gated real-lifecycle test suite (Phase 1G,
   P1-44/45/46): three tiny devcontainer projects under `fixtures/` (minimal
   image, Docker Compose, deliberately failing `postCreateCommand`) and

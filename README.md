@@ -51,6 +51,44 @@ manages them via Docker.)
 Bring checks these at runtime (`bring doctor`) and explains what's missing —
 it never installs them for you.
 
+## Quickstart
+
+```sh
+# 1. Install (from a clone, until the npm release)
+git clone https://github.com/RitvikCS/Bring && cd Bring/bring
+npm ci && npm run build && npm pack && npm install -g ./ritvikcs-bring-*.tgz
+
+# 2. Check the ground under your feet
+bring doctor         # verifies the devcontainer CLI and Docker, with fixes
+
+# 3. In any project that has a devcontainer configuration
+cd ~/code/my-project
+bring up             # build + start (idempotent — safe to run again)
+bring shell          # work inside; exit or Ctrl-D comes back out
+bring down           # stop, keeping the container for a fast restart
+
+# 4. Or drive everything from the full-screen UI
+bring
+```
+
+A project counts as configured when it has
+`.devcontainer/devcontainer.json` or `.devcontainer.json` — the same rules
+as VS Code. Bring remembers a project after its first successful `up`, so
+the TUI and `bring ls` show it from anywhere. Opening the TUI inside a
+configured project that was never brought up lists it too, marked
+"this folder".
+
+### The TUI in one paragraph
+
+`bring` opens an alternate-screen interface: workspaces on the left,
+detail (status, container age, ports, config, latest-log tail) on the
+right. `j`/`k` or arrows select a workspace, `u`/`d` bring it up/down,
+`e` opens a shell (the UI suspends, then repaints when you exit), `L`
+shows the full latest log, `r` rebuilds and `x` removes — both behind an
+explicit confirmation. `?` shows every binding, `q` quits. If `bring
+doctor` would fail, the TUI shows the diagnosis instead of letting
+operations fail confusingly later.
+
 ## Where Bring keeps its state
 
 Everything lives under `~/.local/state/bring/` (or `$XDG_STATE_HOME/bring`
@@ -77,6 +115,10 @@ npm run typecheck && npm run lint && npm test
 npm run build
 npm pack && npm install -g ./ritvikcs-bring-*.tgz
 ```
+
+`npm test` is hermetic (fake binaries, temp state). The real-lifecycle
+suite — actual Dev Containers CLI, actual Docker, tiny fixture projects
+under `fixtures/` — runs with `npm run test:integration`.
 
 ## License
 
