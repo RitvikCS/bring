@@ -6,6 +6,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
+  and publishes via npm trusted publishing (OIDC) — no stored tokens, with
+  provenance attestations generated automatically. The workflow refuses to
+  publish when the tag and `package.json` version disagree.
+
 ## [0.1.0] - 2026-07-16
 
 ### Added

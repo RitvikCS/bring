@@ -1,0 +1,42 @@
+name: Publish
+
+# Publishes to npm when a version tag (v0.2.0, v1.0.0, ...) is pushed.
+# Uses npm trusted publishing (OIDC): npmjs.com is configured to trust this
+# exact workflow file in this repo, so no token is stored anywhere and
+# provenance attestations are generated automatically.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # npm publishes whatever version package.json declares; the tag is only
+      # the trigger. Refuse to publish if the two disagree.
+      - name: Verify tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match package.json version $version" >&2
+            exit 1
+          fi
+      # Trusted publishing needs npm >= 11.5.1; don't rely on the bundled one.
+      - run: npm install -g npm@latest
+      - run: npm publish
