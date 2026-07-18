@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-18
+
 ### Added
 
 - Phase 2 resource inventory foundation: Bring now identifies Dev Container
