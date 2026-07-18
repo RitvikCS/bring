@@ -29,12 +29,26 @@ describe('listKnownWorkspaces', () => {
 		);
 
 		const binDir = makeBinDir();
-		// Fake docker: containers exist only for projB.
+		// Fake docker serving the coordinated inventory: one container on the
+		// host, whose workspace label ties it to projB.
+		const inspectOutput = JSON.stringify([
+			{
+				Id: 'r1',
+				Name: '/vsc',
+				Created: '2026-07-16T12:00:00Z',
+				Image: 'sha256:img',
+				Config: {
+					Image: 'img',
+					Labels: { 'devcontainer.local_folder': projB },
+				},
+			},
+		]);
 		const docker = writeFakeBin(
 			binDir,
 			'docker',
-			`case "$*" in
-	*"${projB}"*) echo '${RUNNING_PS}' ;;
+			`case "$1 $2" in
+	"ps --all") echo '${RUNNING_PS}' ;;
+	"container inspect") echo '${inspectOutput}' ;;
 	*) : ;;
 esac`,
 		);

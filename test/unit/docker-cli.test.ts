@@ -135,6 +135,84 @@ describe('docker adapter commands', () => {
 		});
 	});
 
+	it('keeps surviving inspect data when an id vanishes mid-inventory', async () => {
+		// `docker inspect a b` exits 1 if any id disappeared between the ps
+		// listing and the inspect — while still printing JSON for survivors.
+		// One vanished --rm container must not fail the whole inventory.
+		const dir = makeBinDir();
+		const gone = '{"ID":"gone1","Names":"flaky","State":"exited","Ports":""}';
+		const bin = writeFakeBin(
+			dir,
+			'docker',
+			`case "$1 $2" in
+				"ps --all") printf '%s\\n%s\\n' '${PS_LINE}' '${gone}' ;;
+				"container inspect")
+					echo '[{"Id":"abc123","Name":"/vsc-proj-x","Created":"2026-07-16T12:00:00Z","Image":"sha256:image","Config":{"Image":"vsc-proj-uid","Labels":{"devcontainer.local_folder":"/work/proj"}}}]'
+					echo 'Error response from daemon: No such container: gone1' >&2
+					exit 1
+					;;
+			esac`,
+		);
+		const result = await listAllContainers(bin);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value).toHaveLength(2);
+			expect(result.value[0]).toMatchObject({
+				id: 'abc123',
+				labels: { 'devcontainer.local_folder': '/work/proj' },
+			});
+			// The vanished container falls back to its ps row fields.
+			expect(result.value[1]).toMatchObject({
+				id: 'gone1',
+				name: 'flaky',
+				imageId: '',
+				labels: {},
+			});
+		}
+	});
+
+	it('still fails the inventory when inspect output is unusable', async () => {
+		const dir = makeBinDir();
+		const bin = writeFakeBin(
+			dir,
+			'docker',
+			`case "$1 $2" in
+				"ps --all") echo '${PS_LINE}' ;;
+				"container inspect") echo 'Cannot connect to the Docker daemon' >&2; exit 1 ;;
+			esac`,
+		);
+		const result = await listAllContainers(bin);
+		expect(result).toEqual({
+			ok: false,
+			message: 'Cannot connect to the Docker daemon',
+		});
+	});
+
+	it('treats a digest-pinned image as pinned, never dangling', async () => {
+		// devcontainer.json can pin "image": "repo@sha256:…" — RepoTags is
+		// empty but the image is NOT dangling; prune must never stage it.
+		const dir = makeBinDir();
+		const bin = writeFakeBin(
+			dir,
+			'docker',
+			`case "$1 $2" in
+				"image ls") echo '{"ID":"sha256:pinned"}' ;;
+				"image inspect")
+					echo '[{"Id":"sha256:pinned","Created":"2026-07-16T12:00:00Z","RepoTags":[],"RepoDigests":["mcr.microsoft.com/devcontainers/base@sha256:feed"],"Size":900,"RootFS":{"Layers":["layer-a"]}}]'
+					;;
+			esac`,
+		);
+		const result = await listDevContainerImages(bin, []);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.images[0]).toMatchObject({
+				id: 'sha256:pinned',
+				dangling: false,
+				displayName: 'mcr.microsoft.com/devcontainers/base@sha256:feed',
+			});
+		}
+	});
+
 	it('lists metadata-labelled images plus additional container images', async () => {
 		const dir = makeBinDir();
 		const bin = writeFakeBin(

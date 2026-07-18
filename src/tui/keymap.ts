@@ -21,6 +21,11 @@ export interface KeyInfo {
 /** The parts of the UI situation that change what a key means. */
 export interface KeyContext {
 	phase: 'loading' | 'doctor-blocked' | 'ready';
+	/**
+	 * Action keys only fire in sections where their target is on screen —
+	 * `d` in Images must never act on the invisible Workspaces selection.
+	 */
+	section: 'workspaces' | 'containers' | 'images' | 'profiles';
 	modal:
 		| 'help'
 		| 'confirm-remove'
@@ -221,25 +226,34 @@ export function keyToCommand(
 	if (key.return === true) {
 		return { kind: 'primary' };
 	}
+	// Every action key is scoped to the sections whose pane can actually show
+	// its target; anywhere else the key is dead, never a hidden-pane mutation.
+	const { section } = context;
 	switch (input) {
 		case 'u':
-			return { kind: 'workspace-up' };
+			return section === 'workspaces' ? { kind: 'workspace-up' } : null;
 		case 'd':
-			return { kind: 'workspace-down' };
+			return section === 'workspaces' || section === 'containers'
+				? { kind: 'workspace-down' }
+				: null;
 		case 'r':
 			return { kind: 'rebuild-or-refresh' };
 		case 'e':
-			return { kind: 'open-shell' };
+			return section === 'workspaces' || section === 'containers'
+				? { kind: 'open-shell' }
+				: null;
 		case 'L':
-			return { kind: 'open-logs' };
+			return section === 'workspaces' ? { kind: 'open-logs' } : null;
 		case 'x':
-			return { kind: 'request-remove' };
+			return section === 'profiles' ? null : { kind: 'request-remove' };
 		case ' ':
-			return { kind: 'toggle-selection' };
+			return section === 'images' ? { kind: 'toggle-selection' } : null;
 		case 'p':
-			return { kind: 'prune-dangling' };
+			return section === 'images' ? { kind: 'prune-dangling' } : null;
 		case '/':
-			return { kind: 'open-filter' };
+			return section === 'containers' || section === 'images'
+				? { kind: 'open-filter' }
+				: null;
 		case 'q':
 			return { kind: 'quit' };
 		default:

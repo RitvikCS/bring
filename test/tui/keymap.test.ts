@@ -10,6 +10,7 @@ import {
 
 const READY: KeyContext = {
 	phase: 'ready',
+	section: 'workspaces',
 	modal: null,
 	logViewOpen: false,
 	operationRunning: false,
@@ -18,6 +19,10 @@ const READY: KeyContext = {
 	filterActive: false,
 	detailOpen: false,
 };
+
+const CONTAINERS: KeyContext = { ...READY, section: 'containers' };
+const IMAGES: KeyContext = { ...READY, section: 'images' };
+const PROFILES: KeyContext = { ...READY, section: 'profiles' };
 
 const key = (partial: KeyInfo = {}): KeyInfo => partial;
 
@@ -97,10 +102,10 @@ describe('keymap: ready screen', () => {
 		expect(keyToCommand('e', key(), READY)).toEqual({ kind: 'open-shell' });
 		expect(keyToCommand('L', key(), READY)).toEqual({ kind: 'open-logs' });
 		expect(keyToCommand('x', key(), READY)).toEqual({ kind: 'request-remove' });
-		expect(keyToCommand(' ', key(), READY)).toEqual({
+		expect(keyToCommand(' ', key(), IMAGES)).toEqual({
 			kind: 'toggle-selection',
 		});
-		expect(keyToCommand('p', key(), READY)).toEqual({
+		expect(keyToCommand('p', key(), IMAGES)).toEqual({
 			kind: 'prune-dangling',
 		});
 		expect(keyToCommand('?', key(), READY)).toEqual({ kind: 'open-help' });
@@ -118,10 +123,59 @@ describe('keymap: ready screen', () => {
 	});
 });
 
+describe('keymap: action keys are scoped to their section', () => {
+	it('never lets workspace mutations fire from resource sections', () => {
+		// `u` in Containers/Images once brought up the workspace still
+		// selected in the HIDDEN workspaces pane — these must stay dead keys.
+		expect(keyToCommand('u', key(), CONTAINERS)).toBeNull();
+		expect(keyToCommand('u', key(), IMAGES)).toBeNull();
+		expect(keyToCommand('d', key(), IMAGES)).toBeNull();
+		expect(keyToCommand('e', key(), IMAGES)).toBeNull();
+		expect(keyToCommand('L', key(), CONTAINERS)).toBeNull();
+		expect(keyToCommand('L', key(), IMAGES)).toBeNull();
+	});
+
+	it('keeps container actions available in the Containers section', () => {
+		expect(keyToCommand('d', key(), CONTAINERS)).toEqual({
+			kind: 'workspace-down',
+		});
+		expect(keyToCommand('e', key(), CONTAINERS)).toEqual({
+			kind: 'open-shell',
+		});
+		expect(keyToCommand('x', key(), CONTAINERS)).toEqual({
+			kind: 'request-remove',
+		});
+	});
+
+	it('scopes marking, pruning, and filtering to resource sections', () => {
+		expect(keyToCommand(' ', key(), READY)).toBeNull();
+		expect(keyToCommand(' ', key(), CONTAINERS)).toBeNull();
+		expect(keyToCommand('p', key(), READY)).toBeNull();
+		expect(keyToCommand('p', key(), CONTAINERS)).toBeNull();
+		expect(keyToCommand('/', key(), READY)).toBeNull();
+		expect(keyToCommand('/', key(), CONTAINERS)).toEqual({
+			kind: 'open-filter',
+		});
+		expect(keyToCommand('/', key(), IMAGES)).toEqual({ kind: 'open-filter' });
+	});
+
+	it('leaves the placeholder Profiles section with no action keys', () => {
+		for (const input of ['u', 'd', 'e', 'L', 'x', ' ', 'p', '/']) {
+			expect(keyToCommand(input, key(), PROFILES)).toBeNull();
+		}
+		expect(keyToCommand('r', key(), PROFILES)).toEqual({
+			kind: 'rebuild-or-refresh',
+		});
+		expect(keyToCommand('q', key(), PROFILES)).toEqual({ kind: 'quit' });
+	});
+});
+
 describe('keymap: live resource filter', () => {
 	it('opens with slash, accepts text, and applies or cancels', () => {
-		expect(keyToCommand('/', key(), READY)).toEqual({ kind: 'open-filter' });
-		const filtering: KeyContext = { ...READY, filtering: true };
+		expect(keyToCommand('/', key(), CONTAINERS)).toEqual({
+			kind: 'open-filter',
+		});
+		const filtering: KeyContext = { ...CONTAINERS, filtering: true };
 		expect(keyToCommand('api', key(), filtering)).toEqual({
 			kind: 'filter-input',
 			text: 'api',

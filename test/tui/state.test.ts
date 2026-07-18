@@ -222,6 +222,22 @@ describe('image multi-selection and prune review', () => {
 		});
 		expect(state.selectedImageIds).toEqual(['sha256:old']);
 	});
+
+	it('a refresh that skipped image inspection keeps the list and marks', () => {
+		// The 3-second poll and section switches load with includeImages:false
+		// (images: null). That must never read as "all images vanished" — it
+		// once wiped a staged removal batch by glancing at another section.
+		let state = imageState();
+		state = reduce(state, { type: 'select-prunable-images' });
+		const before = state.images;
+		state = reduce(state, {
+			type: 'refreshed',
+			workspaces: [],
+			resources: { containers: [], images: null, refreshedAt: '' },
+		});
+		expect(state.images).toEqual(before);
+		expect(state.selectedImageIds).toEqual(['sha256:old']);
+	});
 });
 
 describe('resource filtering', () => {

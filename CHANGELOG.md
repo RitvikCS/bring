@@ -58,6 +58,51 @@ follow [Semantic Versioning](https://semver.org/).
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to
   publish when the tag and `package.json` version disagree.
+- Action keys are now scoped to the section on screen: `u`/`d`/`e`/`L` in the
+  Containers or Images section could previously act on the workspace still
+  selected in the hidden Workspaces pane — `d` while reviewing images would
+  bring down a dev environment that was not even visible. Every action key is
+  now dead outside the sections whose pane can show its target, enforced in
+  the keymap and double-checked in the command executor.
+- A Compose project's registered working directory can no longer override the
+  upstream workspace label when relating sidecars: a compose file living
+  under a different registered workspace than the devcontainer it serves had
+  its sidecars filed under the wrong workspace, where `bring down`/`remove`
+  on that workspace would have stopped or deleted another project's
+  containers.
+- One container or image vanishing between the inventory's list and inspect
+  calls (a `--rm` container exiting, a parallel removal) no longer fails the
+  whole inventory — and with it every `bring up`/`down`/`status` on the
+  machine. Surviving inspect data is kept; missing entries fall back to their
+  listing row.
+- Refreshes that skip image inspection (the idle poll, section switches) no
+  longer wipe the Images list and the Space-marked removal batch; a staged
+  batch now survives glancing at another section. A transient inventory
+  failure also keeps the previous image state instead of showing a false
+  empty list.
+- A refresh requested while another was in flight (finishing a container
+  stop/remove while the idle poll was running) was silently dropped, leaving
+  removed containers on screen until the next poll tick; it is now queued and
+  runs as soon as the in-flight pass lands.
+- Digest-pinned images (`"image": "repo@sha256:…"`) were classified as
+  dangling — `p` staged a deliberately pinned base image as "safely
+  prunable". Pinned digests now count as references, and such images display
+  their digest instead of `<none>:<none>`.
+- Paused and restarting containers were treated as already stopped: `d`
+  reported success without touching Docker and `x` failed on the forceless
+  `docker rm`. Both now stop the container for real first.
+- Multi-tagged images could never be removed (Docker refuses a forceless
+  removal by id when several repositories reference the image); tagged images
+  are now removed by untagging each reference, still without `--force`.
+- Image removal now takes the impacted workspaces' operation locks, so it
+  refuses to race a concurrent `bring up` that may be about to use the image,
+  exactly like container mutations always did.
+- `bring ls` now reads the same coordinated inventory as `bring status` and
+  the TUI, so the three can no longer disagree about a Compose workspace
+  whose sidecars outlive its primary — and `ls` issues one Docker query
+  instead of one per workspace. All three also share one snapshot reduction,
+  which fixes `bring status` showing a sidecar's uptime instead of the
+  primary's.
 
 ## [0.1.0] - 2026-07-16
 

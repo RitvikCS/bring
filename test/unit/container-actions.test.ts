@@ -44,6 +44,21 @@ describe('container mutations', () => {
 		expect(log).not.toContain('--force');
 	});
 
+	it('stops a paused container for real instead of calling it stopped', async () => {
+		// Paused/restarting containers are up as far as Docker is concerned; a
+		// forceless `rm` would refuse them, and "already stopped" would lie.
+		const harness = makeHarness({});
+		const result = await mutateContainer(
+			harness.ctx,
+			resource('paused'),
+			'stop',
+		);
+		expect(result).toEqual({ ok: true, message: 'project-dev stopped' });
+		expect(readFileSync(harness.argvFile, 'utf8')).toContain(
+			'docker stop container-1',
+		);
+	});
+
 	it('does not call Docker for an already-stopped stop', async () => {
 		const harness = makeHarness({});
 		const result = await mutateContainer(

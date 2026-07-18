@@ -50,7 +50,8 @@ export async function listResources(options: {
 			ok: true,
 			inventory: {
 				containers,
-				images: [],
+				// Not an empty image list — images were not inspected at all.
+				images: null,
 				refreshedAt: (options.now ?? new Date()).toISOString(),
 			},
 		};
@@ -94,16 +95,25 @@ export function identifyDevContainerResources(
 ): DevContainerResource[] {
 	const composeWorkspaces = new Map<string, string>();
 	const known = new Set(knownWorkspacePaths);
+	// The upstream workspace label is the authority for a project's workspace.
 	for (const container of all) {
 		const workspace = container.labels[DEVCONTAINER_WORKSPACE_LABEL];
 		const project = container.labels[COMPOSE_PROJECT_LABEL];
 		if (workspace !== undefined && project !== undefined) {
 			composeWorkspaces.set(project, workspace);
 		}
+	}
+	// The registered Compose working directory only fills gaps — projects whose
+	// labelled primary is gone. It must never override a label: a compose file
+	// can live under a different registered workspace than the one it serves,
+	// and misattributing sidecars would point down/remove at the wrong project.
+	for (const container of all) {
+		const project = container.labels[COMPOSE_PROJECT_LABEL];
 		const workingDir = container.labels[COMPOSE_WORKING_DIR_LABEL];
 		if (
 			project !== undefined &&
 			workingDir !== undefined &&
+			!composeWorkspaces.has(project) &&
 			known.has(workingDir)
 		) {
 			composeWorkspaces.set(project, workingDir);

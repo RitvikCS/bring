@@ -92,6 +92,33 @@ describe('identifyDevContainerResources', () => {
 			role: 'service',
 		});
 	});
+
+	it('never lets a registered working_dir override the labelled workspace', () => {
+		// A compose file can live under a DIFFERENT registered workspace than
+		// the devcontainer it serves. If working_dir won, these sidecars would
+		// be filed under /work/b — and `bring remove` on /work/b would delete
+		// /work/a's containers.
+		const resources = identifyDevContainerResources(
+			[
+				container('primary', {
+					'devcontainer.local_folder': '/work/a',
+					'com.docker.compose.project': 'stack',
+					'com.docker.compose.project.working_dir': '/work/b',
+					'com.docker.compose.service': 'app',
+				}),
+				container('database', {
+					'com.docker.compose.project': 'stack',
+					'com.docker.compose.project.working_dir': '/work/b',
+					'com.docker.compose.service': 'db',
+				}),
+			],
+			['/work/a', '/work/b'],
+		);
+		expect(resources).toHaveLength(2);
+		for (const resource of resources) {
+			expect(resource.workspacePath).toBe('/work/a');
+		}
+	});
 });
 
 describe('addImageImpact', () => {

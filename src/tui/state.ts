@@ -310,6 +310,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 		case 'loaded': {
 			const workspaces = orderWorkspaces(action.workspaces);
 			const resources = action.resources ?? emptyResources();
+			const images = resources.images ?? [];
 			return {
 				...state,
 				phase: 'ready',
@@ -321,8 +322,8 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedPath: workspaces[0]?.ref.rootPath ?? null,
 				containers: resources.containers,
 				selectedContainerId: resources.containers[0]?.id ?? null,
-				images: resources.images,
-				selectedImageId: resources.images[0]?.id ?? null,
+				images,
+				selectedImageId: images[0]?.id ?? null,
 				selectedImageIds: [],
 				resourceProblem: action.resourceProblem ?? null,
 				statusMessage:
@@ -340,6 +341,10 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				images: state.images,
 				refreshedAt: '',
 			};
+			// A pass that skipped image inspection (images: null) must leave the
+			// image list AND the user's Space-marks untouched — otherwise a
+			// glance at another section silently discards a staged removal batch.
+			const images = resources.images ?? state.images;
 			const workspaces = orderWorkspaces(
 				// A refresh never forgets a same-session failure the snapshot
 				// cannot see (the registry has no failure memory).
@@ -358,7 +363,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			const visibleContainerResources = resources.containers.filter(
 				(container) => matchesContainer(container, state.filters.containers),
 			);
-			const visibleImageResources = resources.images.filter((image) =>
+			const visibleImageResources = images.filter((image) =>
 				matchesImage(image, state.filters.images),
 			);
 			const containerStillThere = visibleContainerResources.some(
@@ -368,9 +373,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				(image) => image.id === state.selectedImageId,
 			);
 			const selectedImageIds = state.selectedImageIds.filter((id) =>
-				resources.images.some(
-					(image) => image.id === id && !isImageAttached(image),
-				),
+				images.some((image) => image.id === id && !isImageAttached(image)),
 			);
 			return {
 				...state,
@@ -386,7 +389,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedContainerId: containerStillThere
 					? state.selectedContainerId
 					: (visibleContainerResources[0]?.id ?? null),
-				images: resources.images,
+				images,
 				selectedImageId: imageStillThere
 					? state.selectedImageId
 					: (visibleImageResources[0]?.id ?? null),

@@ -189,7 +189,7 @@ describe.runIf(RUN)('compose fixture lifecycle (P1-45)', () => {
 					?.serviceName,
 			).toBe('db');
 
-			const workspaceImage = inventory.inventory.images.find((image) =>
+			const workspaceImage = (inventory.inventory.images ?? []).find((image) =>
 				image.workspacePaths.includes(ref.rootPath),
 			);
 			expect(workspaceImage?.usage).toBe('attached');
@@ -269,10 +269,9 @@ describe.runIf(RUN)('image lineage safety (Phase 2)', () => {
 			if (!result.ok) {
 				throw new Error(result.problem.summary);
 			}
-			const base = result.inventory.images.find((image) =>
-				image.references.includes(baseTag),
-			);
-			const derived = result.inventory.images.find((image) =>
+			const images = result.inventory.images ?? [];
+			const base = images.find((image) => image.references.includes(baseTag));
+			const derived = images.find((image) =>
 				image.references.includes(derivedTag),
 			);
 			expect(base).toMatchObject({

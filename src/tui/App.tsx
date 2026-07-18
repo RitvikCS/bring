@@ -97,8 +97,12 @@ export function App({
 	// action the user hasn't even seen yet.
 	const modalOpenedAtRef = useRef(0);
 	// Polling and post-operation refreshes may coincide. One inventory query at
-	// a time prevents Docker inspect processes from piling up behind the TUI.
+	// a time prevents Docker inspect processes from piling up behind the TUI —
+	// but a request arriving mid-flight is QUEUED, never dropped: the in-flight
+	// data was snapshotted before the mutation that requested the new pass.
 	const refreshingRef = useRef(false);
+	// undefined = nothing queued; null = queued for the then-current section.
+	const queuedRefreshRef = useRef<Section | null | undefined>(undefined);
 
 	// Repaint from scratch shortly after the terminal is resized. Incremental
 	// rendering diffs against the previous frame, but a resize invalidates
@@ -130,21 +134,30 @@ export function App({
 	const refresh = useCallback(
 		async (sectionOverride?: Section) => {
 			if (refreshingRef.current) {
+				queuedRefreshRef.current = sectionOverride ?? null;
 				return;
 			}
 			refreshingRef.current = true;
 			try {
-				const section = sectionOverride ?? stateRef.current.section;
-				const data = await environment.load({
-					includeImages: section === 'images',
-				});
-				dispatch({
-					type: 'refreshed',
-					workspaces: data.workspaces,
-					resources: data.resources,
-					resourceProblem: data.resourceProblem,
-					dotfilesRepository: data.dotfilesRepository,
-				});
+				let requested = sectionOverride;
+				for (;;) {
+					const section = requested ?? stateRef.current.section;
+					const data = await environment.load({
+						includeImages: section === 'images',
+					});
+					dispatch({
+						type: 'refreshed',
+						workspaces: data.workspaces,
+						resources: data.resources,
+						resourceProblem: data.resourceProblem,
+						dotfilesRepository: data.dotfilesRepository,
+					});
+					if (queuedRefreshRef.current === undefined) {
+						return;
+					}
+					requested = queuedRefreshRef.current ?? undefined;
+					queuedRefreshRef.current = undefined;
+				}
 			} finally {
 				refreshingRef.current = false;
 			}
@@ -507,6 +520,11 @@ export function App({
 					dispatch({ type: 'close-modal' });
 					return;
 				case 'workspace-up':
+					// The keymap already scopes `u` to Workspaces; this guard keeps
+					// a future keymap change from ever mutating a hidden selection.
+					if (current.section !== 'workspaces') {
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -531,6 +549,9 @@ export function App({
 						if (container !== null) {
 							runContainerMutation('stop', container);
 						}
+						return;
+					}
+					if (current.section !== 'workspaces') {
 						return;
 					}
 					if (selected === null || busy(selected)) {
@@ -577,6 +598,9 @@ export function App({
 						void runContainerShell(container);
 						return;
 					}
+					if (current.section !== 'workspaces') {
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -590,6 +614,11 @@ export function App({
 					void runShell(selected);
 					return;
 				case 'open-logs': {
+					// Reachable outside Workspaces only from the operation pane,
+					// where the operation names the log's workspace explicitly.
+					if (current.operation === null && current.section !== 'workspaces') {
+						return;
+					}
 					const target =
 						current.operation !== null
 							? (current.workspaces.find(
@@ -750,6 +779,7 @@ export function App({
 		const current = stateRef.current;
 		const command = keyToCommand(input, key, {
 			phase: current.phase,
+			section: current.section,
 			modal: current.modal?.kind ?? null,
 			logViewOpen: current.logView !== null,
 			operationRunning:

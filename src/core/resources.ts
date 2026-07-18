@@ -50,6 +50,52 @@ export interface DevContainerImageResource {
 	usage: ImageUsage;
 }
 
+/** One workspace's containers reduced to the fields every status view shows. */
+export interface WorkspaceContainersSummary {
+	status: 'not-created' | 'running' | 'stopped';
+	containerIds: string[];
+	imageNames: string[];
+	forwardedPorts: ForwardedPort[];
+	/** Docker's human age line ("Up 2 hours"), preferring the labelled primary. */
+	uptimeText?: string;
+}
+
+/**
+ * The single authority for containers → workspace status. The TUI, `bring
+ * status`, and `bring ls` all reduce through here so they can never disagree
+ * about what "running" means or whose uptime is shown.
+ */
+export function summarizeWorkspaceContainers(
+	containers: readonly DevContainerResource[],
+): WorkspaceContainersSummary {
+	const running = containers.filter(
+		(container) => container.state === 'running',
+	);
+	// A Compose sidecar can sort ahead of the primary; the uptime shown must
+	// be the labelled primary's whenever one exists.
+	const primary =
+		running.find((container) => container.role === 'primary') ??
+		running[0] ??
+		containers.find((container) => container.role === 'primary') ??
+		containers[0];
+	return {
+		status:
+			containers.length === 0
+				? 'not-created'
+				: running.length > 0
+					? 'running'
+					: 'stopped',
+		containerIds: containers.map((container) => container.id),
+		imageNames: [
+			...new Set(containers.map((container) => container.imageName)),
+		],
+		forwardedPorts: running.flatMap((container) => container.ports),
+		...(primary !== undefined && primary.statusText !== ''
+			? { uptimeText: primary.statusText }
+			: {}),
+	};
+}
+
 /** Exact attachments are Docker's hard safety boundary for image removal. */
 export function isImageAttached(image: DevContainerImageResource): boolean {
 	return image.usage === 'attached';
@@ -64,6 +110,10 @@ export function isImagePruneCandidate(
 
 export interface ResourceInventory {
 	containers: DevContainerResource[];
-	images: DevContainerImageResource[];
+	/**
+	 * null when this pass skipped image inspection (includeImages: false) —
+	 * consumers must keep their previous image state, not treat it as empty.
+	 */
+	images: DevContainerImageResource[] | null;
 	refreshedAt: string;
 }

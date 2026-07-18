@@ -1,5 +1,6 @@
 import { basename } from 'node:path';
 import type { BringProblem } from '../core/errors.js';
+import { summarizeWorkspaceContainers } from '../core/resources.js';
 import type { WorkspaceRef, WorkspaceSnapshot } from '../core/types.js';
 import type { OperationContext } from './context.js';
 import { listResources } from './list-resources.js';
@@ -32,29 +33,17 @@ export async function getSnapshot(
 			},
 		};
 	}
-	const containers = listed.inventory.containers.filter(
-		(container) => container.workspacePath === workspace.rootPath,
+	const summary = summarizeWorkspaceContainers(
+		listed.inventory.containers.filter(
+			(container) => container.workspacePath === workspace.rootPath,
+		),
 	);
-	const running = containers.filter((c) => c.state === 'running');
-	const primary = running[0] ?? containers[0];
 	return {
 		ok: true,
 		snapshot: {
 			workspace,
 			name: basename(workspace.rootPath),
-			status:
-				containers.length === 0
-					? 'not-created'
-					: running.length > 0
-						? 'running'
-						: 'stopped',
-			containerIds: containers.map((c) => c.id),
-			imageNames: [...new Set(containers.map((c) => c.imageName))],
-			forwardedPorts: running.flatMap((c) => c.ports),
-			uptimeText:
-				primary !== undefined && primary.statusText !== ''
-					? primary.statusText
-					: undefined,
+			...summary,
 		},
 	};
 }

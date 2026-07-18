@@ -22,10 +22,11 @@ import { openShell } from '../application/open-shell.js';
 import { resolveTarget } from '../application/resolve-target.js';
 import type { BringProblem } from '../core/errors.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
-import type {
-	DevContainerImageResource,
-	DevContainerResource,
-	ResourceInventory,
+import {
+	type DevContainerImageResource,
+	type DevContainerResource,
+	type ResourceInventory,
+	summarizeWorkspaceContainers,
 } from '../core/resources.js';
 import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
@@ -238,37 +239,22 @@ function loadOne(
 	if (!resourceInventoryHealthy) {
 		return base;
 	}
-	const containers = resources.containers.filter(
-		(container) => container.workspacePath === ref.rootPath,
-	);
-	const running = containers.filter(
-		(container) => container.state === 'running',
-	);
-	const primary =
-		running.find((container) => container.role === 'primary') ??
-		running[0] ??
-		containers.find((container) => container.role === 'primary') ??
-		containers[0];
 	return {
 		...base,
-		status:
-			containers.length === 0
-				? 'not-created'
-				: running.length > 0
-					? 'running'
-					: 'stopped',
-		containerIds: containers.map((container) => container.id),
-		imageNames: [
-			...new Set(containers.map((container) => container.imageName)),
-		],
-		forwardedPorts: running.flatMap((container) => container.ports),
-		uptimeText:
-			primary !== undefined && primary.statusText !== ''
-				? primary.statusText
-				: undefined,
+		...summarizeWorkspaceContainers(
+			resources.containers.filter(
+				(container) => container.workspacePath === ref.rootPath,
+			),
+		),
 	};
 }
 
 function emptyInventory(): ResourceInventory {
-	return { containers: [], images: [], refreshedAt: new Date(0).toISOString() };
+	// images: null — a failed pass inspected nothing; the reducer keeps the
+	// previous image list (and marks) instead of showing a false empty state.
+	return {
+		containers: [],
+		images: null,
+		refreshedAt: new Date(0).toISOString(),
+	};
 }

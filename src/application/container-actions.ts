@@ -32,7 +32,13 @@ export async function mutateContainer(
 		);
 	}
 	try {
-		if (container.state === 'running') {
+		// Paused and restarting containers are up as far as Docker is concerned:
+		// they must be stopped for real (and a forceless `rm` would refuse them).
+		const needsStop =
+			container.state === 'running' ||
+			container.state === 'paused' ||
+			container.state === 'restarting';
+		if (needsStop) {
 			const stopped = await stopContainers(ctx.dockerExe, [container.id], {
 				env: ctx.env,
 			});
@@ -45,10 +51,9 @@ export async function mutateContainer(
 		if (action === 'stop') {
 			return {
 				ok: true,
-				message:
-					container.state === 'running'
-						? `${container.name} stopped`
-						: `${container.name} is already stopped`,
+				message: needsStop
+					? `${container.name} stopped`
+					: `${container.name} is already stopped`,
 			};
 		}
 		const removed = await removeContainers(ctx.dockerExe, [container.id], {

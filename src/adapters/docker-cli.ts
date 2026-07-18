@@ -18,6 +18,7 @@ interface DockerImageInspect {
 	Id?: string;
 	Created?: string;
 	RepoTags?: string[] | null;
+	RepoDigests?: string[] | null;
 	Size?: number;
 	RootFS?: {
 		Layers?: string[];
@@ -211,14 +212,20 @@ export async function listDevContainerImages(
 				const references = (image.RepoTags ?? []).filter(
 					(reference) => reference !== '<none>:<none>',
 				);
+				// Digest-pinned images ("repo@sha256:…") carry no tags but are
+				// NOT dangling to Docker — treating them as dangling would let
+				// bulk prune delete a deliberately pinned base.
+				const digests = (image.RepoDigests ?? []).filter(
+					(reference) => reference !== '<none>@<none>',
+				);
 				return [
 					{
 						id: image.Id ?? '',
 						references,
-						displayName: references[0] ?? '<none>:<none>',
+						displayName: references[0] ?? digests[0] ?? '<none>:<none>',
 						createdAt: image.Created ?? '',
 						sizeBytes: image.Size ?? 0,
-						dangling: references.length === 0,
+						dangling: references.length === 0 && digests.length === 0,
 					},
 				];
 			}),
@@ -375,27 +382,36 @@ async function inspectBatches<T>(
 			[resource, 'inspect', ...batch],
 			options,
 		);
-		const output = commandOutput(outcome);
-		if (!output.ok) {
-			return output;
+		if (outcome.outcome !== 'ran') {
+			return { ok: false, message: outcome.message };
 		}
-		try {
-			const parsed = JSON.parse(output.value) as unknown;
-			if (!Array.isArray(parsed)) {
-				return {
-					ok: false,
-					message: `Docker ${resource} inspect returned invalid JSON.`,
-				};
-			}
-			values.push(...(parsed as T[]));
-		} catch {
+		// Inspect exits 1 whenever ANY listed id vanished between the listing
+		// and this call — while still printing full JSON for the survivors.
+		// That race is ordinary (a --rm container exiting, a parallel rm), so
+		// a parseable array is always accepted; missing entries fall back to
+		// the ps row data. Only unusable output fails the inventory.
+		const parsed = parseInspectArray(outcome.result.stdout);
+		if (parsed === null) {
 			return {
 				ok: false,
-				message: `Docker ${resource} inspect returned invalid JSON.`,
+				message:
+					outcome.result.exitCode !== 0
+						? outcome.result.stderr.trim()
+						: `Docker ${resource} inspect returned invalid JSON.`,
 			};
 		}
+		values.push(...(parsed as T[]));
 	}
 	return { ok: true, value: values };
+}
+
+function parseInspectArray(stdout: string): unknown[] | null {
+	try {
+		const parsed = JSON.parse(stdout) as unknown;
+		return Array.isArray(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
 }
 
 function trimContainerName(name: string): string {
