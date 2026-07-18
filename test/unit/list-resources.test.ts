@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	addImageImpact,
 	identifyDevContainerResources,
+	isLayerAncestor,
 } from '../../src/application/list-resources.js';
 import type {
 	DevContainerImageResource,
@@ -104,7 +105,11 @@ describe('addImageImpact', () => {
 		const devContainers = identifyDevContainerResources([primary, unrelated]);
 		const baseImage: Omit<
 			DevContainerImageResource,
-			'containerNames' | 'workspacePaths' | 'workspaceNames' | 'inUse'
+			| 'containerNames'
+			| 'descendantContainerNames'
+			| 'workspacePaths'
+			| 'workspaceNames'
+			| 'usage'
 		> = {
 			id: 'sha256:shared',
 			references: ['base:latest'],
@@ -115,15 +120,58 @@ describe('addImageImpact', () => {
 		};
 
 		expect(
-			addImageImpact([baseImage], [primary, unrelated], devContainers),
+			addImageImpact([baseImage], [primary, unrelated], devContainers, {
+				'sha256:shared': ['layer-a'],
+			}),
 		).toEqual([
 			{
 				...baseImage,
 				containerNames: ['primary', 'unrelated'],
+				descendantContainerNames: [],
 				workspacePaths: ['/work/project'],
 				workspaceNames: ['project'],
-				inUse: true,
+				usage: 'attached',
 			},
 		]);
+	});
+
+	it('classifies a layer prefix as a cached base and carries descendant impact', () => {
+		const derived = container(
+			'derived',
+			{ 'devcontainer.local_folder': '/work/project' },
+			'sha256:derived',
+		);
+		const devContainers = identifyDevContainerResources([derived]);
+		const baseImage = {
+			id: 'sha256:base',
+			references: ['devcontainers/base:ubuntu'],
+			displayName: 'devcontainers/base:ubuntu',
+			createdAt: '2026-07-16T12:00:00Z',
+			sizeBytes: 1000,
+			dangling: false,
+		};
+
+		expect(
+			addImageImpact([baseImage], [derived], devContainers, {
+				'sha256:base': ['layer-a', 'layer-b'],
+				'sha256:derived': ['layer-a', 'layer-b', 'feature-layer'],
+			}),
+		).toEqual([
+			{
+				...baseImage,
+				containerNames: [],
+				descendantContainerNames: ['derived'],
+				workspacePaths: ['/work/project'],
+				workspaceNames: ['project'],
+				usage: 'base',
+			},
+		]);
+	});
+
+	it('requires a non-empty exact layer prefix for ancestry', () => {
+		expect(isLayerAncestor(['a', 'b'], ['a', 'b', 'c'])).toBe(true);
+		expect(isLayerAncestor(['a', 'x'], ['a', 'b', 'c'])).toBe(false);
+		expect(isLayerAncestor([], ['a'])).toBe(false);
+		expect(isLayerAncestor(['a', 'b'], ['a'])).toBe(false);
 	});
 });

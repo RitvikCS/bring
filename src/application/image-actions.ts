@@ -1,6 +1,9 @@
 import { removeImages } from '../adapters/docker-cli.js';
 import type { BringProblem } from '../core/errors.js';
-import type { DevContainerImageResource } from '../core/resources.js';
+import {
+	type DevContainerImageResource,
+	isImageAttached,
+} from '../core/resources.js';
 import type { OperationContext } from './context.js';
 
 export type ImageRemovalResult =
@@ -15,10 +18,10 @@ export async function removeImageResources(
 	if (images.length === 0) {
 		return failed('No images are selected.');
 	}
-	const inUse = images.filter((image) => image.inUse);
-	if (inUse.length > 0) {
+	const attached = images.filter(isImageAttached);
+	if (attached.length > 0) {
 		return failed(
-			`${inUse.map((image) => image.displayName).join(', ')} cannot be removed while referenced by ${inUse.flatMap((image) => image.containerNames).join(', ')}.`,
+			`${attached.map((image) => image.displayName).join(', ')} cannot be removed while referenced by ${attached.flatMap((image) => image.containerNames).join(', ')}.`,
 		);
 	}
 	const removed = await removeImages(

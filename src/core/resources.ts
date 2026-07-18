@@ -31,6 +31,8 @@ export interface DevContainerResource extends DockerContainerResource {
 }
 
 /** One image positively identified as Dev Container-related. */
+export type ImageUsage = 'attached' | 'base' | 'unused';
+
 export interface DevContainerImageResource {
 	id: string;
 	references: string[];
@@ -38,12 +40,26 @@ export interface DevContainerImageResource {
 	createdAt: string;
 	sizeBytes: number;
 	dangling: boolean;
-	/** Every Docker container using the image, including non-dev containers. */
+	/** Every Docker container directly attached to this exact image id. */
 	containerNames: string[];
-	/** Dev Container workspaces currently related through a container. */
+	/** Containers whose image layer chain descends from this image. */
+	descendantContainerNames: string[];
+	/** Dev Container workspaces attached directly or through a descendant. */
 	workspacePaths: string[];
 	workspaceNames: string[];
-	inUse: boolean;
+	usage: ImageUsage;
+}
+
+/** Exact attachments are Docker's hard safety boundary for image removal. */
+export function isImageAttached(image: DevContainerImageResource): boolean {
+	return image.usage === 'attached';
+}
+
+/** Bulk cleanup is deliberately narrower than manual, confirmed removal. */
+export function isImagePruneCandidate(
+	image: DevContainerImageResource,
+): boolean {
+	return image.usage === 'unused' && image.dangling;
 }
 
 export interface ResourceInventory {

@@ -69,9 +69,7 @@ export function ImageList({
 						wrap="truncate"
 					>
 						{marked ? '*' : ' '}{' '}
-						<Text color={image.inUse ? 'green' : undefined}>
-							{image.inUse ? '●' : image.dangling ? '◇' : '○'}
-						</Text>{' '}
+						<Text color={usageColor(image)}>{usageSymbol(image)}</Text>{' '}
 						{image.displayName}{' '}
 						<Text dimColor>
 							· {formatBytes(image.sizeBytes)} · {usageLabel(image)}
@@ -110,12 +108,8 @@ export function ImageDetail({
 					</DetailRow>
 				)}
 				<DetailRow label="Usage">
-					<Text color={image.inUse ? 'green' : undefined}>
-						{image.inUse
-							? '● In use'
-							: image.dangling
-								? '◇ Dangling'
-								: '○ Unused'}
+					<Text color={usageColor(image)}>
+						{usageSymbol(image)} {usageLabel(image)}
 					</Text>
 				</DetailRow>
 				<DetailRow label="Selected">
@@ -134,8 +128,18 @@ export function ImageDetail({
 			)}
 			{image.containerNames.length > 0 && (
 				<Box marginTop={1} flexDirection="column">
-					<Text bold>Used by containers</Text>
+					<Text bold>Attached containers</Text>
 					{image.containerNames.slice(0, 4).map((name) => (
+						<Text key={name} wrap="truncate">
+							{name}
+						</Text>
+					))}
+				</Box>
+			)}
+			{image.descendantContainerNames.length > 0 && (
+				<Box marginTop={1} flexDirection="column">
+					<Text bold>Descendant containers</Text>
+					{image.descendantContainerNames.slice(0, 4).map((name) => (
 						<Text key={name} wrap="truncate">
 							{name}
 						</Text>
@@ -151,15 +155,15 @@ export function ImageDetail({
 			<Box marginTop={1}>
 				<KeyHints
 					hints={
-						image.inUse
+						image.usage === 'attached'
 							? [
 									['r', 'Refresh'],
-									['p', 'Prune unused'],
+									['p', 'Prune dangling'],
 								]
 							: [
 									['Space', marked ? 'Unselect' : 'Select'],
 									['x', 'Remove'],
-									['p', 'Prune unused'],
+									['p', 'Prune dangling'],
 								]
 					}
 				/>
@@ -179,7 +183,33 @@ export function formatBytes(bytes: number): string {
 }
 
 function usageLabel(image: DevContainerImageResource): string {
-	return image.inUse ? 'in use' : image.dangling ? 'dangling' : 'unused';
+	if (image.usage === 'attached') {
+		return 'Attached';
+	}
+	if (image.usage === 'base') {
+		return 'Cached base';
+	}
+	return image.dangling ? 'Dangling' : 'Unused tagged';
+}
+
+function usageSymbol(image: DevContainerImageResource): string {
+	return image.usage === 'attached'
+		? '●'
+		: image.usage === 'base'
+			? '◆'
+			: image.dangling
+				? '◇'
+				: '○';
+}
+
+function usageColor(
+	image: DevContainerImageResource,
+): 'green' | 'yellow' | undefined {
+	return image.usage === 'attached'
+		? 'green'
+		: image.usage === 'base'
+			? 'yellow'
+			: undefined;
 }
 
 function DetailRow({

@@ -10,6 +10,9 @@ can be exercised through the actual Dev Containers CLI and Docker:
   Phase 2 relationship inventory and cleanup coverage).
 - `failing/` — a `postCreateCommand` that always fails
   (P1-46: concise error classification and the captured log).
+- `lineage/` — two tiny Dockerfiles used to prove a labelled base image is
+  classified as an ancestor of, rather than unattached from, a running derived
+  Dev Container image.
 
 The integration tests copy each fixture to a temporary directory before
 running, so nothing here is ever registered in your real Bring state and

@@ -19,6 +19,9 @@ interface DockerImageInspect {
 	Created?: string;
 	RepoTags?: string[] | null;
 	Size?: number;
+	RootFS?: {
+		Layers?: string[];
+	};
 }
 
 interface DockerContainerInspect {
@@ -30,6 +33,22 @@ interface DockerContainerInspect {
 		Image?: string;
 		Labels?: Record<string, string> | null;
 	};
+}
+
+type ImageWithoutImpact = Omit<
+	DevContainerImageResource,
+	| 'containerNames'
+	| 'descendantContainerNames'
+	| 'workspacePaths'
+	| 'workspaceNames'
+	| 'usage'
+>;
+
+export interface DevContainerImageListing {
+	/** Only metadata-labelled images and exact Dev Container image ids. */
+	images: ImageWithoutImpact[];
+	/** Includes other container images solely for local ancestry comparison. */
+	layerIdsByImageId: Record<string, string[]>;
 }
 
 export type DockerResult<T> =
@@ -137,15 +156,9 @@ export async function listAllContainers(
 export async function listDevContainerImages(
 	executable: string,
 	additionalImageIds: readonly string[],
-	options: RunOptions = {},
-): Promise<
-	DockerResult<
-		Omit<
-			DevContainerImageResource,
-			'containerNames' | 'workspacePaths' | 'workspaceNames' | 'inUse'
-		>[]
-	>
-> {
+	options: RunOptions & { lineageImageIds?: readonly string[] } = {},
+): Promise<DockerResult<DevContainerImageListing>> {
+	const { lineageImageIds = [], ...runOptions } = options;
 	const listed = await runCommand(
 		executable,
 		[
@@ -158,7 +171,7 @@ export async function listDevContainerImages(
 			'--format',
 			'{{json .}}',
 		],
-		options,
+		runOptions,
 	);
 	const listResult = commandOutput(listed);
 	if (!listResult.ok) {
@@ -172,32 +185,49 @@ export async function listDevContainerImages(
 		]),
 	];
 	if (ids.length === 0) {
-		return { ok: true, value: [] };
+		return { ok: true, value: { images: [], layerIdsByImageId: {} } };
 	}
+	const inspectIds = [
+		...new Set([...ids, ...lineageImageIds.filter((id) => id !== '')]),
+	];
 	const inspected = await inspectBatches<DockerImageInspect>(
 		executable,
 		'image',
-		ids,
-		options,
+		inspectIds,
+		runOptions,
 	);
 	if (!inspected.ok) {
 		return inspected;
 	}
+	const byId = new Map(inspected.value.map((image) => [image.Id ?? '', image]));
 	return {
 		ok: true,
-		value: inspected.value.map((image) => {
-			const references = (image.RepoTags ?? []).filter(
-				(reference) => reference !== '<none>:<none>',
-			);
-			return {
-				id: image.Id ?? '',
-				references,
-				displayName: references[0] ?? '<none>:<none>',
-				createdAt: image.Created ?? '',
-				sizeBytes: image.Size ?? 0,
-				dangling: references.length === 0,
-			};
-		}),
+		value: {
+			images: ids.flatMap((id) => {
+				const image = byId.get(id);
+				if (image === undefined) {
+					return [];
+				}
+				const references = (image.RepoTags ?? []).filter(
+					(reference) => reference !== '<none>:<none>',
+				);
+				return [
+					{
+						id: image.Id ?? '',
+						references,
+						displayName: references[0] ?? '<none>:<none>',
+						createdAt: image.Created ?? '',
+						sizeBytes: image.Size ?? 0,
+						dangling: references.length === 0,
+					},
+				];
+			}),
+			layerIdsByImageId: Object.fromEntries(
+				inspected.value
+					.filter((image) => image.Id !== undefined)
+					.map((image) => [image.Id as string, image.RootFS?.Layers ?? []]),
+			),
+		},
 	};
 }
 

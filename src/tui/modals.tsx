@@ -17,7 +17,7 @@ const HELP_ROWS: readonly [string, string][] = [
 	['Enter · Space', 'inspect / select image'],
 	['u · d · e', 'workspace up · down/stop · shell'],
 	['r · L', 'rebuild/refresh · latest log'],
-	['x · p', 'confirmed removal · review unused images'],
+	['x · p', 'confirmed removal · prune dangling images'],
 	['/', 'filter Containers or Images'],
 	['Esc · q · ?', 'back/close · quit · help'],
 ];
@@ -61,6 +61,10 @@ export function ConfirmImageRemove({
 	const workspaces = [
 		...new Set(images.flatMap((image) => image.workspaceNames)),
 	];
+	const baseCount = images.filter((image) => image.usage === 'base').length;
+	const unusedTaggedCount = images.filter(
+		(image) => image.usage === 'unused' && !image.dangling,
+	).length;
 	return (
 		<Box
 			flexDirection="column"
@@ -84,10 +88,25 @@ export function ConfirmImageRemove({
 				{images.length > 3 && (
 					<Text dimColor>…and {images.length - 3} more</Text>
 				)}
+				{baseCount > 0 && (
+					<Text color="yellow">
+						{baseCount} cached base image{baseCount === 1 ? '' : 's'} support
+						existing containers and may need to be pulled or rebuilt again.
+					</Text>
+				)}
+				{unusedTaggedCount > 0 && (
+					<Text>
+						{unusedTaggedCount} unused tagged image
+						{unusedTaggedCount === 1 ? '' : 's'} may still be named by a
+						configuration.
+					</Text>
+				)}
 				{workspaces.length > 0 && (
 					<Text>Affected workspaces may rebuild: {workspaces.join(', ')}</Text>
 				)}
-				<Text>Containers, volumes, and source files are not touched.</Text>
+				<Text>
+					Existing containers, volumes, and source files are not touched.
+				</Text>
 			</Box>
 			<Box marginTop={1}>
 				<Text dimColor>[Enter] Remove [Esc] Cancel</Text>

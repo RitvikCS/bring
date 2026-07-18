@@ -53,7 +53,7 @@ export type TuiCommand =
 	| { kind: 'open-logs' }
 	| { kind: 'request-remove' }
 	| { kind: 'toggle-selection' }
-	| { kind: 'prune-unused' }
+	| { kind: 'prune-dangling' }
 	| { kind: 'open-filter' }
 	| { kind: 'filter-input'; text: string }
 	| { kind: 'filter-backspace' }
@@ -237,7 +237,7 @@ export function keyToCommand(
 		case ' ':
 			return { kind: 'toggle-selection' };
 		case 'p':
-			return { kind: 'prune-unused' };
+			return { kind: 'prune-dangling' };
 		case '/':
 			return { kind: 'open-filter' };
 		case 'q':

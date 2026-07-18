@@ -191,17 +191,48 @@ describe('Images section (§12.6)', () => {
 		const frame = view(imagesState());
 		expect(frame).toContain('IMAGES 1/2 · 0 selected');
 		expect(frame).toContain('base:latest');
-		expect(frame).toContain('● In use');
-		expect(frame).toContain('Used by containers');
+		expect(frame).toContain('● Attached');
+		expect(frame).toContain('Attached containers');
 		expect(frame).toContain('Workspace impact');
 	});
 
 	it('uses list/detail drill-down when narrow', () => {
 		const state = imagesState();
-		expect(view(state, NARROW)).not.toContain('Used by containers');
+		expect(view(state, NARROW)).not.toContain('Attached containers');
 		expect(view(stateFrom([{ type: 'open-detail' }], state), NARROW)).toContain(
-			'Used by containers',
+			'Attached containers',
 		);
+	});
+
+	it('distinguishes cached bases and warns on explicit removal', () => {
+		let state = stateFrom([
+			{
+				type: 'loaded',
+				workspaces: [],
+				resources: {
+					containers: [],
+					images: [makeImage('ubuntu', 'base')],
+					refreshedAt: '',
+				},
+			},
+			{ type: 'move-section', delta: 1 },
+			{ type: 'move-section', delta: 1 },
+		]);
+		const detail = view(state);
+		expect(detail).toContain('◆ Cached base');
+		expect(detail).toContain('Descendant containers');
+
+		state = stateFrom(
+			[
+				{ type: 'toggle-image-selection' },
+				{ type: 'open-confirm-image-remove' },
+			],
+			state,
+		);
+		const confirmation = view(state);
+		expect(confirmation).toContain('1 cached base image');
+		expect(confirmation).toContain('may need to be pulled or rebuilt again');
+		expect(confirmation).toContain('Affected workspaces may rebuild: ubuntu');
 	});
 
 	it('renders one batch confirmation with an upper-bound disclaimer', () => {
@@ -220,7 +251,7 @@ describe('Images section (§12.6)', () => {
 		expect(frame).toContain('• unused:latest');
 		expect(frame).toContain('actual recovery may be lower');
 		expect(frame).toContain(
-			'Containers, volumes, and source files are not touched.',
+			'Existing containers, volumes, and source files are not touched.',
 		);
 	});
 

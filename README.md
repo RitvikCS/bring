@@ -86,10 +86,13 @@ to Dev Container workspaces (including Compose sidecars); Images exposes only
 images carrying Dev Container metadata or used by those containers. `j`/`k`
 or arrows select, `h`/`l` or `1`–`4` change sections, Tab changes pane focus,
 and `/` filters resource lists. Workspace actions remain `u`, `d`, `e`, `r`,
-`L`, and `x`. In Images, Space marks a removable image and `p` reviews all unused
-images; one confirmation shows the batch and an upper-bound space estimate.
-In-use images cannot be selected, image removal is never forced, and source
-files are never touched. `?` shows every binding and `q` quits. If `bring
+`L`, and `x`. In Images, Space marks a removable image and `p` reviews safely
+prunable dangling images; one confirmation shows the batch and an upper-bound
+space estimate.
+Attached images cannot be selected. Cached base and unused tagged images are
+explicit opt-in selections; `p` only stages unattached, non-ancestor dangling
+images. Image removal is never forced, and source files are never touched. `?`
+shows every binding and `q` quits. If `bring
 doctor` fails, the TUI shows the diagnosis instead of letting operations fail
 confusingly later.
 

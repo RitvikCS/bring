@@ -145,31 +145,40 @@ describe('docker adapter commands', () => {
 					echo '{"ID":"sha256:meta","Repository":"vsc-proj","Tag":"latest"}'
 					;;
 				"image inspect")
-					echo '[{"Id":"sha256:meta","Created":"2026-07-16T12:00:00Z","RepoTags":["vsc-proj:latest"],"Size":1200},{"Id":"sha256:used","Created":"2026-07-15T12:00:00Z","RepoTags":null,"Size":800}]'
+					echo '[{"Id":"sha256:meta","Created":"2026-07-16T12:00:00Z","RepoTags":["vsc-proj:latest"],"Size":1200,"RootFS":{"Layers":["layer-a"]}},{"Id":"sha256:used","Created":"2026-07-15T12:00:00Z","RepoTags":null,"Size":800,"RootFS":{"Layers":["layer-a","layer-b"]}},{"Id":"sha256:unrelated","Created":"2026-07-14T12:00:00Z","RepoTags":["postgres:latest"],"Size":700,"RootFS":{"Layers":["layer-c"]}}]'
 					;;
 			esac`,
 		);
-		const result = await listDevContainerImages(bin, ['sha256:used']);
+		const result = await listDevContainerImages(bin, ['sha256:used'], {
+			lineageImageIds: ['sha256:unrelated'],
+		});
 		expect(result).toEqual({
 			ok: true,
-			value: [
-				{
-					id: 'sha256:meta',
-					references: ['vsc-proj:latest'],
-					displayName: 'vsc-proj:latest',
-					createdAt: '2026-07-16T12:00:00Z',
-					sizeBytes: 1200,
-					dangling: false,
+			value: {
+				images: [
+					{
+						id: 'sha256:meta',
+						references: ['vsc-proj:latest'],
+						displayName: 'vsc-proj:latest',
+						createdAt: '2026-07-16T12:00:00Z',
+						sizeBytes: 1200,
+						dangling: false,
+					},
+					{
+						id: 'sha256:used',
+						references: [],
+						displayName: '<none>:<none>',
+						createdAt: '2026-07-15T12:00:00Z',
+						sizeBytes: 800,
+						dangling: true,
+					},
+				],
+				layerIdsByImageId: {
+					'sha256:meta': ['layer-a'],
+					'sha256:used': ['layer-a', 'layer-b'],
+					'sha256:unrelated': ['layer-c'],
 				},
-				{
-					id: 'sha256:used',
-					references: [],
-					displayName: '<none>:<none>',
-					createdAt: '2026-07-15T12:00:00Z',
-					sizeBytes: 800,
-					dangling: true,
-				},
-			],
+			},
 		});
 	});
 

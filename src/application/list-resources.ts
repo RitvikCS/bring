@@ -12,6 +12,7 @@ import {
 	type DevContainerImageResource,
 	type DevContainerResource,
 	type DockerContainerResource,
+	type ImageUsage,
 	type ResourceInventory,
 } from '../core/resources.js';
 
@@ -57,7 +58,12 @@ export async function listResources(options: {
 	const listedImages = await listDevContainerImages(
 		options.dockerExe,
 		containers.map((container) => container.imageId),
-		{ env: options.env },
+		{
+			env: options.env,
+			lineageImageIds: allContainers.value.map(
+				(container) => container.imageId,
+			),
+		},
 	);
 	if (!listedImages.ok) {
 		return failed(`Docker could not inspect images: ${listedImages.message}`);
@@ -67,9 +73,10 @@ export async function listResources(options: {
 		inventory: {
 			containers,
 			images: addImageImpact(
-				listedImages.value,
+				listedImages.value.images,
 				allContainers.value,
 				containers,
+				listedImages.value.layerIdsByImageId,
 			),
 			refreshedAt: (options.now ?? new Date()).toISOString(),
 		},
@@ -140,39 +147,80 @@ export function identifyDevContainerResources(
 export function addImageImpact(
 	images: readonly Omit<
 		DevContainerImageResource,
-		'containerNames' | 'workspacePaths' | 'workspaceNames' | 'inUse'
+		| 'containerNames'
+		| 'descendantContainerNames'
+		| 'workspacePaths'
+		| 'workspaceNames'
+		| 'usage'
 	>[],
 	allContainers: readonly DockerContainerResource[],
 	devContainers: readonly DevContainerResource[],
+	layerIdsByImageId: Readonly<Record<string, readonly string[]>>,
 ): DevContainerImageResource[] {
 	return images
 		.map((image) => {
-			const users = allContainers.filter(
+			const directUsers = allContainers.filter(
 				(container) => container.imageId === image.id,
 			);
+			const imageLayers = layerIdsByImageId[image.id] ?? [];
+			const descendantUsers = allContainers.filter(
+				(container) =>
+					container.imageId !== image.id &&
+					isLayerAncestor(
+						imageLayers,
+						layerIdsByImageId[container.imageId] ?? [],
+					),
+			);
 			const devUsers = devContainers.filter(
-				(container) => container.imageId === image.id,
+				(container) =>
+					container.imageId === image.id ||
+					isLayerAncestor(
+						imageLayers,
+						layerIdsByImageId[container.imageId] ?? [],
+					),
 			);
 			const workspacePaths = [
 				...new Set(devUsers.map((container) => container.workspacePath)),
 			];
+			const usage: ImageUsage =
+				directUsers.length > 0
+					? 'attached'
+					: descendantUsers.length > 0
+						? 'base'
+						: 'unused';
 			return {
 				...image,
-				containerNames: users.map((container) => container.name).sort(),
+				containerNames: directUsers.map((container) => container.name).sort(),
+				descendantContainerNames: descendantUsers
+					.map((container) => container.name)
+					.sort(),
 				workspacePaths,
 				workspaceNames: workspacePaths.map((path) => basename(path)),
-				inUse: users.length > 0,
+				usage,
 			};
 		})
 		.sort((a, b) => {
-			if (a.inUse !== b.inUse) {
-				return a.inUse ? -1 : 1;
+			const usageOrder = { attached: 0, base: 1, unused: 2 } as const;
+			if (a.usage !== b.usage) {
+				return usageOrder[a.usage] - usageOrder[b.usage];
 			}
 			if (a.dangling !== b.dangling) {
 				return a.dangling ? 1 : -1;
 			}
 			return b.createdAt.localeCompare(a.createdAt);
 		});
+}
+
+/** A non-empty layer chain is an ancestor when it prefixes the child chain. */
+export function isLayerAncestor(
+	ancestor: readonly string[],
+	descendant: readonly string[],
+): boolean {
+	return (
+		ancestor.length > 0 &&
+		ancestor.length <= descendant.length &&
+		ancestor.every((layer, index) => descendant[index] === layer)
+	);
 }
 
 function failed(summary: string): ResourceInventoryResult {

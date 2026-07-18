@@ -1,6 +1,7 @@
 import type {
 	DevContainerImageResource,
 	DevContainerResource,
+	ImageUsage,
 } from '../../src/core/resources.js';
 import type { WorkspaceStatus } from '../../src/core/types.js';
 import type { TuiWorkspace } from '../../src/tui/state.js';
@@ -52,18 +53,26 @@ export function makeContainer(
 
 export function makeImage(
 	name: string,
-	inUse = false,
+	usageOrAttached: ImageUsage | boolean = 'unused',
+	dangling = false,
 ): DevContainerImageResource {
+	const usage: ImageUsage =
+		typeof usageOrAttached === 'boolean'
+			? usageOrAttached
+				? 'attached'
+				: 'unused'
+			: usageOrAttached;
 	return {
 		id: `sha256:${name}`,
-		references: [`${name}:latest`],
-		displayName: `${name}:latest`,
+		references: dangling ? [] : [`${name}:latest`],
+		displayName: dangling ? '<none>:<none>' : `${name}:latest`,
 		createdAt: '2026-07-16T12:00:00.000Z',
 		sizeBytes: 1_000_000_000,
-		dangling: false,
-		containerNames: inUse ? [`${name}-container`] : [],
-		workspacePaths: inUse ? [`/home/user/${name}`] : [],
-		workspaceNames: inUse ? [name] : [],
-		inUse,
+		dangling,
+		containerNames: usage === 'attached' ? [`${name}-container`] : [],
+		descendantContainerNames: usage === 'base' ? [`${name}-descendant`] : [],
+		workspacePaths: usage === 'unused' ? [] : [`/home/user/${name}`],
+		workspaceNames: usage === 'unused' ? [] : [name],
+		usage,
 	};
 }

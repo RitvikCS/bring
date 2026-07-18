@@ -100,7 +100,9 @@ describe('keymap: ready screen', () => {
 		expect(keyToCommand(' ', key(), READY)).toEqual({
 			kind: 'toggle-selection',
 		});
-		expect(keyToCommand('p', key(), READY)).toEqual({ kind: 'prune-unused' });
+		expect(keyToCommand('p', key(), READY)).toEqual({
+			kind: 'prune-dangling',
+		});
 		expect(keyToCommand('?', key(), READY)).toEqual({ kind: 'open-help' });
 		expect(keyToCommand('q', key(), READY)).toEqual({ kind: 'quit' });
 		expect(keyToCommand('', key({ return: true }), READY)).toEqual({

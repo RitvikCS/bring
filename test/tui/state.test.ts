@@ -170,7 +170,12 @@ describe('image multi-selection and prune review', () => {
 			workspaces: [],
 			resources: {
 				containers: [],
-				images: [makeImage('used', true), makeImage('free'), makeImage('old')],
+				images: [
+					makeImage('used', 'attached'),
+					makeImage('base', 'base'),
+					makeImage('free'),
+					makeImage('old', 'unused', true),
+				],
 				refreshedAt: '',
 			},
 		});
@@ -178,42 +183,44 @@ describe('image multi-selection and prune review', () => {
 		return reduce(state, { type: 'move-section', delta: 1 });
 	}
 
-	it('blocks in-use selection and toggles an unused image', () => {
+	it('blocks attached images and warns before selecting a cached base', () => {
 		let state = imageState();
 		state = reduce(state, { type: 'toggle-image-selection' });
 		expect(state.selectedImageIds).toEqual([]);
 		expect(state.statusMessage).toContain('cannot be selected');
 		state = reduce(state, { type: 'move-selection', delta: 1 });
 		state = reduce(state, { type: 'toggle-image-selection' });
-		expect(state.selectedImageIds).toEqual(['sha256:free']);
+		expect(state.selectedImageIds).toEqual(['sha256:base']);
+		expect(state.statusMessage).toContain('cached base');
 		state = reduce(state, { type: 'toggle-image-selection' });
 		expect(state.selectedImageIds).toEqual([]);
 	});
 
-	it('prune selects every unused image and opens one impact confirmation', () => {
+	it('prune selects only unattached dangling images', () => {
 		let state = imageState();
-		state = reduce(state, { type: 'select-unused-images' });
-		expect(state.selectedImageIds).toEqual(['sha256:free', 'sha256:old']);
+		state = reduce(state, { type: 'select-prunable-images' });
+		expect(state.selectedImageIds).toEqual(['sha256:old']);
+		expect(state.statusMessage).toContain('1 dangling image');
 		state = reduce(state, { type: 'open-confirm-image-remove' });
 		expect(state.modal).toEqual({
 			kind: 'confirm-image-remove',
-			imageIds: ['sha256:free', 'sha256:old'],
+			imageIds: ['sha256:old'],
 		});
 	});
 
 	it('preserves marks for existing removable images across refresh', () => {
 		let state = imageState();
-		state = reduce(state, { type: 'select-unused-images' });
+		state = reduce(state, { type: 'select-prunable-images' });
 		state = reduce(state, {
 			type: 'refreshed',
 			workspaces: [],
 			resources: {
 				containers: [],
-				images: [makeImage('free')],
+				images: [makeImage('old', 'unused', true)],
 				refreshedAt: '',
 			},
 		});
-		expect(state.selectedImageIds).toEqual(['sha256:free']);
+		expect(state.selectedImageIds).toEqual(['sha256:old']);
 	});
 });
 

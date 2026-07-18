@@ -29,10 +29,10 @@ follow [Semantic Versioning](https://semver.org/).
 - The Images section now shows exact sizes, creation age, tags, dangling state,
   every container use, and related workspace impact for positively identified
   Dev Container images. `Space` marks removable images, `x` confirms one
-  selected batch by name, and `p` stages all unused Dev Container images for
-  the same review. In-use images cannot be selected, removal never uses
-  `--force`, and `--no-prune` prevents Docker from silently deleting unselected
-  parent images.
+  selected batch by name, and `p` stages safely prunable dangling Dev Container
+  images for the same review. Attached images cannot be selected, removal never
+  uses `--force`, and `--no-prune` prevents Docker from silently deleting
+  unselected parent images.
   Recovery is deliberately described as an upper bound because layers may be
   shared.
 - `/` now opens a live smart-case filter in Containers and Images, with
@@ -48,6 +48,12 @@ follow [Semantic Versioning](https://semver.org/).
   workspace label. Registered Compose working-directory labels preserve the
   relationship even if the primary disappeared first; real integration
   coverage asserts that no app or sidecar survives removal.
+- Image cleanup now distinguishes an exact container attachment from a cached
+  base-image relationship by comparing inspected Docker layer chains. Cached
+  bases show their descendant containers and workspace impact instead of being
+  called unused. `p` stages only unattached, non-ancestor dangling images;
+  cached bases and unused tagged images require explicit selection, and their
+  confirmation warns that a future rebuild may pull or build them again.
 - Tag-triggered npm publishing: pushing a `v*` tag runs the full check suite
   and publishes via npm trusted publishing (OIDC) — no stored tokens, with
   provenance attestations generated automatically. The workflow refuses to

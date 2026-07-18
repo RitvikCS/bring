@@ -1,10 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { removeImageResources } from '../../src/application/image-actions.js';
-import type { DevContainerImageResource } from '../../src/core/resources.js';
+import type {
+	DevContainerImageResource,
+	ImageUsage,
+} from '../../src/core/resources.js';
 import { makeHarness } from '../helpers/fake-workspace.js';
 
-function image(name: string, inUse = false): DevContainerImageResource {
+function image(
+	name: string,
+	usage: ImageUsage = 'unused',
+): DevContainerImageResource {
 	return {
 		id: `sha256:${name}`,
 		references: [`${name}:latest`],
@@ -12,10 +18,11 @@ function image(name: string, inUse = false): DevContainerImageResource {
 		createdAt: '2026-07-16T12:00:00Z',
 		sizeBytes: 1000,
 		dangling: false,
-		containerNames: inUse ? ['running-container'] : [],
-		workspacePaths: inUse ? ['/work/project'] : [],
-		workspaceNames: inUse ? ['project'] : [],
-		inUse,
+		containerNames: usage === 'attached' ? ['running-container'] : [],
+		descendantContainerNames: usage === 'base' ? ['derived-container'] : [],
+		workspacePaths: usage === 'unused' ? [] : ['/work/project'],
+		workspaceNames: usage === 'unused' ? [] : ['project'],
+		usage,
 	};
 }
 
@@ -35,9 +42,20 @@ describe('removeImageResources', () => {
 	it('blocks an image referenced by any Docker container', async () => {
 		const harness = makeHarness({});
 		const result = await removeImageResources(harness.ctx, [
-			image('shared', true),
+			image('shared', 'attached'),
 		]);
 		expect(result.ok).toBe(false);
 		expect(result.message).toContain('running-container');
+	});
+
+	it('allows an explicitly confirmed cached base without force', async () => {
+		const harness = makeHarness({});
+		const result = await removeImageResources(harness.ctx, [
+			image('base', 'base'),
+		]);
+		expect(result.ok).toBe(true);
+		const log = readFileSync(harness.argvFile, 'utf8');
+		expect(log).toContain('docker image rm --no-prune sha256:base');
+		expect(log).not.toContain('--force');
 	});
 });

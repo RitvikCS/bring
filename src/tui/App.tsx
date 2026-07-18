@@ -10,6 +10,7 @@ import type {
 	OperationKind,
 	OperationResult,
 } from '../core/operation-events.js';
+import { isImagePruneCandidate } from '../core/resources.js';
 import { Spinner } from '../direct/Spinner.js';
 import { enteringShellLine } from '../direct/shell-banner.js';
 import { ContainerDetail, ContainerList } from './ContainersPane.js';
@@ -699,12 +700,12 @@ export function App({
 						dispatch({ type: 'toggle-image-selection' });
 					}
 					return;
-				case 'prune-unused':
+				case 'prune-dangling':
 					if (current.section === 'images') {
-						dispatch({ type: 'select-unused-images' });
+						dispatch({ type: 'select-prunable-images' });
 						modalOpenedAtRef.current = Date.now();
-						const unused = current.images.filter((image) => !image.inUse);
-						if (unused.length > 0) {
+						const prunable = current.images.filter(isImagePruneCandidate);
+						if (prunable.length > 0) {
 							dispatch({ type: 'open-confirm-image-remove' });
 						}
 					}

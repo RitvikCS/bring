@@ -6,7 +6,7 @@ import {
 	rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { findExecutable } from '../../src/adapters/find-executable.js';
 import { runCommand } from '../../src/adapters/process-runner.js';
@@ -17,6 +17,7 @@ import { getSnapshot } from '../../src/application/get-status.js';
 import { removeImageResources } from '../../src/application/image-actions.js';
 import { listResources } from '../../src/application/list-resources.js';
 import { openShell } from '../../src/application/open-shell.js';
+import { isImagePruneCandidate } from '../../src/core/resources.js';
 import type { WorkspaceRef } from '../../src/core/types.js';
 import { workspaceIdentity } from '../../src/core/workspace-resolver.js';
 import { readLatestLog } from '../../src/stores/log-store.js';
@@ -191,7 +192,7 @@ describe.runIf(RUN)('compose fixture lifecycle (P1-45)', () => {
 			const workspaceImage = inventory.inventory.images.find((image) =>
 				image.workspacePaths.includes(ref.rootPath),
 			);
-			expect(workspaceImage?.inUse).toBe(true);
+			expect(workspaceImage?.usage).toBe('attached');
 			if (workspaceImage !== undefined) {
 				const blocked = await removeImageResources(ctx, [workspaceImage]);
 				expect(blocked.ok).toBe(false);
@@ -204,6 +205,87 @@ describe.runIf(RUN)('compose fixture lifecycle (P1-45)', () => {
 			expect(removed.outcome).toBe('success');
 			const gone = await getSnapshot(ctx, ref);
 			expect(gone.ok && gone.snapshot.status).toBe('not-created');
+		},
+		10 * MINUTES,
+	);
+});
+
+describe.runIf(RUN)('image lineage safety (Phase 2)', () => {
+	it(
+		'classifies a labelled base as cached when a running image descends from it',
+		async () => {
+			const { ctx, ref } = prepare('minimal');
+			const suffix = basename(ref.rootPath).toLowerCase();
+			const baseTag = `bring-it-lineage-base-${suffix}:test`;
+			const derivedTag = `bring-it-lineage-derived-${suffix}:test`;
+			const containerName = `bring-it-lineage-${suffix}`;
+			const fixture = join(FIXTURES, 'lineage');
+
+			// The workspace cleanup runs first, then these test-owned image tags go.
+			cleanups.unshift(async () => {
+				await runCommand(ctx.dockerExe, ['rm', '--force', containerName], {
+					env: ctx.env,
+				});
+				await runCommand(ctx.dockerExe, ['image', 'rm', derivedTag, baseTag], {
+					env: ctx.env,
+				});
+			});
+
+			await expectDockerSuccess(ctx, [
+				'build',
+				'--file',
+				join(fixture, 'base.Dockerfile'),
+				'--tag',
+				baseTag,
+				fixture,
+			]);
+			await expectDockerSuccess(ctx, [
+				'build',
+				'--file',
+				join(fixture, 'derived.Dockerfile'),
+				'--build-arg',
+				`BASE_IMAGE=${baseTag}`,
+				'--tag',
+				derivedTag,
+				fixture,
+			]);
+			await expectDockerSuccess(ctx, [
+				'run',
+				'--detach',
+				'--name',
+				containerName,
+				'--label',
+				`devcontainer.local_folder=${ref.rootPath}`,
+				derivedTag,
+				'sleep',
+				'infinity',
+			]);
+
+			const result = await listResources({
+				dockerExe: ctx.dockerExe,
+				env: ctx.env,
+			});
+			expect(result.ok).toBe(true);
+			if (!result.ok) {
+				throw new Error(result.problem.summary);
+			}
+			const base = result.inventory.images.find((image) =>
+				image.references.includes(baseTag),
+			);
+			const derived = result.inventory.images.find((image) =>
+				image.references.includes(derivedTag),
+			);
+			expect(base).toMatchObject({
+				usage: 'base',
+				containerNames: [],
+				descendantContainerNames: expect.arrayContaining([containerName]),
+				workspacePaths: expect.arrayContaining([ref.rootPath]),
+			});
+			if (base === undefined) {
+				throw new Error('The lineage base image was not discovered.');
+			}
+			expect(isImagePruneCandidate(base)).toBe(false);
+			expect(derived?.usage).toBe('attached');
 		},
 		10 * MINUTES,
 	);
@@ -231,3 +313,16 @@ describe.runIf(RUN)('failing fixture (P1-46)', () => {
 		10 * MINUTES,
 	);
 });
+
+async function expectDockerSuccess(
+	ctx: OperationContext,
+	args: readonly string[],
+): Promise<void> {
+	const outcome = await runCommand(ctx.dockerExe, args, { env: ctx.env });
+	if (outcome.outcome !== 'ran') {
+		throw new Error(outcome.message);
+	}
+	if (outcome.result.exitCode !== 0) {
+		throw new Error(outcome.result.stderr || outcome.result.stdout);
+	}
+}

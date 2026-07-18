@@ -5,10 +5,12 @@ import type {
 	OperationResult,
 	OperationStage,
 } from '../core/operation-events.js';
-import type {
-	DevContainerImageResource,
-	DevContainerResource,
-	ResourceInventory,
+import {
+	type DevContainerImageResource,
+	type DevContainerResource,
+	isImageAttached,
+	isImagePruneCandidate,
+	type ResourceInventory,
 } from '../core/resources.js';
 import type {
 	ForwardedPort,
@@ -173,7 +175,7 @@ export type TuiAction =
 	| { type: 'open-confirm-rebuild' }
 	| { type: 'open-confirm-container-remove' }
 	| { type: 'toggle-image-selection' }
-	| { type: 'select-unused-images' }
+	| { type: 'select-prunable-images' }
 	| { type: 'open-confirm-image-remove' }
 	| { type: 'open-filter' }
 	| { type: 'filter-input'; text: string }
@@ -366,7 +368,9 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				(image) => image.id === state.selectedImageId,
 			);
 			const selectedImageIds = state.selectedImageIds.filter((id) =>
-				resources.images.some((image) => image.id === id && !image.inUse),
+				resources.images.some(
+					(image) => image.id === id && !isImageAttached(image),
+				),
 			);
 			return {
 				...state,
@@ -496,7 +500,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			if (image === null) {
 				return state;
 			}
-			if (image.inUse) {
+			if (isImageAttached(image)) {
 				return {
 					...state,
 					statusMessage: `${image.displayName} is in use by ${image.containerNames.join(', ')} and cannot be selected.`,
@@ -508,19 +512,23 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				selectedImageIds: selected
 					? state.selectedImageIds.filter((id) => id !== image.id)
 					: [...state.selectedImageIds, image.id],
+				statusMessage:
+					!selected && image.usage === 'base'
+						? `${image.displayName} is a cached base for ${image.descendantContainerNames.join(', ')}; removing it may slow a future rebuild.`
+						: state.statusMessage,
 			};
 		}
-		case 'select-unused-images': {
+		case 'select-prunable-images': {
 			const selectedImageIds = state.images
-				.filter((image) => !image.inUse)
+				.filter(isImagePruneCandidate)
 				.map((image) => image.id);
 			return {
 				...state,
 				selectedImageIds,
 				statusMessage:
 					selectedImageIds.length === 0
-						? 'No unused Dev Container images to prune.'
-						: `Selected ${selectedImageIds.length} unused image${selectedImageIds.length === 1 ? '' : 's'} for review.`,
+						? 'No safely prunable dangling Dev Container images.'
+						: `Selected ${selectedImageIds.length} dangling image${selectedImageIds.length === 1 ? '' : 's'} for review.`,
 			};
 		}
 		case 'open-confirm-image-remove': {
@@ -534,7 +542,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			const images = state.images.filter((image) =>
 				imageIds.includes(image.id),
 			);
-			const blocked = images.find((image) => image.inUse);
+			const blocked = images.find(isImageAttached);
 			if (blocked !== undefined) {
 				return {
 					...state,
@@ -788,7 +796,13 @@ function matchesImage(
 			...image.references,
 			...image.containerNames,
 			...image.workspaceNames,
-			image.inUse ? 'in use' : image.dangling ? 'dangling' : 'unused',
+			image.usage === 'attached'
+				? 'attached in use'
+				: image.usage === 'base'
+					? 'base cached ancestor'
+					: image.dangling
+						? 'dangling'
+						: 'unused tagged',
 		].join(' '),
 		query,
 	);
