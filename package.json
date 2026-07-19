@@ -1,6 +1,6 @@
 {
 	"name": "@ritvikcs/bring",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Friendly terminal UI and command layer on top of the Dev Containers CLI",
 	"type": "module",
 	"license": "Apache-2.0",

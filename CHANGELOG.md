@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-19
+
 ### Changed
 
 - `npm pack`/`npm publish` now always rebuild first (`prepack` hook). A
