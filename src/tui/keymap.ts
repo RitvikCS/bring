@@ -77,6 +77,14 @@ export function keyToCommand(
 	key: KeyInfo,
 	context: KeyContext,
 ): TuiCommand | null {
+	// A Ctrl-modified letter is not that letter: Ctrl+D once arrived after a
+	// shell session and read as `d`, stopping the workspace with no confirm.
+	// The only Ctrl chords Bring binds are Ctrl+H/Ctrl+L (pane focus), so
+	// everything else with Ctrl held is inert. Empty input passes through —
+	// special keys (backspace, arrows) may carry flags without a character.
+	if (key.ctrl === true && input !== '' && input !== 'h' && input !== 'l') {
+		return null;
+	}
 	// Doctor-blocked screen (P1-43): retry or leave, nothing else.
 	if (context.phase === 'doctor-blocked') {
 		if (input === 'r') {

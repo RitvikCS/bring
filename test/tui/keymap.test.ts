@@ -123,6 +123,40 @@ describe('keymap: ready screen', () => {
 	});
 });
 
+describe('keymap: Ctrl-modified letters are not their plain bindings', () => {
+	it('Ctrl+D is inert — it must never read as d (down)', () => {
+		expect(keyToCommand('d', key({ ctrl: true }), READY)).toBeNull();
+		expect(keyToCommand('d', key({ ctrl: true }), CONTAINERS)).toBeNull();
+	});
+
+	it('Ctrl+X, Ctrl+U, Ctrl+E, Ctrl+Q are inert', () => {
+		expect(keyToCommand('x', key({ ctrl: true }), READY)).toBeNull();
+		expect(keyToCommand('u', key({ ctrl: true }), READY)).toBeNull();
+		expect(keyToCommand('e', key({ ctrl: true }), READY)).toBeNull();
+		expect(keyToCommand('q', key({ ctrl: true }), READY)).toBeNull();
+	});
+
+	it('Ctrl+J does not move the selection', () => {
+		expect(keyToCommand('j', key({ ctrl: true }), READY)).toBeNull();
+	});
+
+	it('the bound chords Ctrl+H/Ctrl+L still focus panes', () => {
+		expect(keyToCommand('h', key({ ctrl: true }), READY)).toEqual({
+			kind: 'focus-pane',
+			pane: 'list',
+		});
+		expect(keyToCommand('l', key({ ctrl: true }), READY)).toEqual({
+			kind: 'focus-pane',
+			pane: 'detail',
+		});
+	});
+
+	it('Ctrl+N inside a confirm modal does not close it', () => {
+		const modal: KeyContext = { ...READY, modal: 'confirm-remove' };
+		expect(keyToCommand('n', key({ ctrl: true }), modal)).toBeNull();
+	});
+});
+
 describe('keymap: action keys are scoped to their section', () => {
 	it('never lets workspace mutations fire from resource sections', () => {
 		// `u` in Containers/Images once brought up the workspace still

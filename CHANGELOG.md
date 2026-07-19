@@ -6,6 +6,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Ctrl-modified keys no longer act as their plain letters in the TUI:
+  Ctrl+D read as `d` and stopped the selected workspace without asking,
+  Ctrl+X as `x` opened the remove confirmation. Only Bring's real Ctrl
+  chords (Ctrl+H/Ctrl+L pane focus) act; every other Ctrl combination is
+  now inert.
+
 ## [0.2.1] - 2026-07-19
 
 ### Changed
