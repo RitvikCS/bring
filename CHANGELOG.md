@@ -6,6 +6,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `npm pack`/`npm publish` now always rebuild first (`prepack` hook). A
+  stale `dist/` previously shipped silently in locally packed tarballs.
+
 ### Fixed
 
 - Ctrl-modified keys no longer act as their plain letters in the TUI:

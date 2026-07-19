@@ -37,7 +37,8 @@
 		"format": "biome check --write .",
 		"test": "vitest run",
 		"test:integration": "BRING_INTEGRATION=1 vitest run test/integration",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"prepack": "npm run build"
 	},
 	"dependencies": {
 		"ink": "^7.1.0",
