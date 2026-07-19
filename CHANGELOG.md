@@ -6,6 +6,16 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Shells opened from the TUI no longer race the suspended TUI for keyboard
+  input. Bring now stops reading the terminal entirely while a shell owns it
+  and discards anything it captured before and after, so keystrokes cannot
+  leak into the shell, vanish from it, or replay as TUI commands after it
+  exits. On macOS this replay could reopen the shell or trigger the remove
+  confirmation from a typed `exit`; a stolen Ctrl+D EOF also left the shell
+  waiting for an extra Enter.
+
 ## [0.2.0] - 2026-07-18
 
 ### Added

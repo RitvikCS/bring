@@ -51,6 +51,7 @@ import {
 	visibleContainers,
 	visibleImages,
 } from './state.js';
+import { handTerminalToChild } from './stdin-gate.js';
 import { WorkspaceDetail, WorkspaceList } from './WorkspacesPane.js';
 
 // The Workspaces TUI shell (P1-33…P1-43, spec §11): state lives in the pure
@@ -347,8 +348,13 @@ export function App({
 			// P1-42: the shell owns the terminal until it exits; Ink restores
 			// the alternate screen and repaints when the suspension ends.
 			await suspendTerminal(async () => {
-				process.stdout.write(`${enteringShellLine(workspace.name, true)}\n`);
-				await environment.shell(workspace.ref);
+				const reclaimStdin = handTerminalToChild();
+				try {
+					process.stdout.write(`${enteringShellLine(workspace.name, true)}\n`);
+					await environment.shell(workspace.ref);
+				} finally {
+					reclaimStdin();
+				}
 			});
 			// Anything typed into the dying/dead shell would otherwise arrive
 			// here as TUI commands the instant input resumes.
@@ -366,10 +372,15 @@ export function App({
 		async (container: NonNullable<ReturnType<typeof selectedContainer>>) => {
 			let resultMessage = `Shell in ${container.name} closed — back in Bring.`;
 			await suspendTerminal(async () => {
-				process.stdout.write(`${enteringShellLine(container.name, true)}\n`);
-				const result = await environment.containerShell(container);
-				if (!result.ok) {
-					resultMessage = result.message;
+				const reclaimStdin = handTerminalToChild();
+				try {
+					process.stdout.write(`${enteringShellLine(container.name, true)}\n`);
+					const result = await environment.containerShell(container);
+					if (!result.ok) {
+						resultMessage = result.message;
+					}
+				} finally {
+					reclaimStdin();
 				}
 			});
 			ignoreInputUntilRef.current = Date.now() + 400;
