@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-19
+
 ### Changed
 
 - Shells no longer show Docker Desktop's "What's next: Try Docker Debug…"
