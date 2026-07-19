@@ -88,7 +88,9 @@ export async function openContainerShell(
 		ctx.devcontainerExe,
 		container.id,
 		command,
-		{ env: ctx.env, stdio: 'inherit' },
+		// Docker Desktop appends a "What's next: Try Docker Debug…" hint
+		// after every exec — noise between the shell and Bring's UI.
+		{ env: { ...ctx.env, DOCKER_CLI_HINTS: 'false' }, stdio: 'inherit' },
 	);
 	if (run.outcome === 'spawn-failed') {
 		return failed(

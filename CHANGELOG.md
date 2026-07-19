@@ -6,6 +6,12 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Shells no longer show Docker Desktop's "What's next: Try Docker Debug…"
+  hint on exit (`DOCKER_CLI_HINTS=false` is set for interactive shell
+  sessions only).
+
 ### Fixed
 
 - Shells opened from the TUI no longer race the suspended TUI for keyboard
