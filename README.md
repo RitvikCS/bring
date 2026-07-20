@@ -5,7 +5,10 @@ A friendly terminal UI and command layer on top of the
 environment up, take it down, inspect it, and clean it up without remembering
 the underlying `devcontainer` and `docker` syntax.
 
+![bring demo — up, status, shell, and the full-screen interface](https://raw.githubusercontent.com/RitvikCS/bring/main/demo/bring-demo.gif)
+
 ```sh
+bring this up        # yes, that works — `this` and `.` mean "this project"
 bring up             # start the dev container for the current project
 bring down           # stop it (containers kept for a fast restart)
 bring shell          # open a shell inside it (bring shell -- zsh works too)
@@ -19,7 +22,8 @@ bring doctor         # check that devcontainer CLI + Docker are ready
 ```
 
 Every command also takes `--json` for scripting and `--verbose` for the raw
-underlying output.
+underlying output. The full reference — every command, TUI key, option, and
+exit code — lives in [docs/commands.md](docs/commands.md).
 
 > **Status: early development.** Direct commands and the full-screen
 > Workspaces, Containers, and Images sections work end to end.
@@ -70,6 +74,17 @@ bring down           # stop, keeping the container for a fast restart
 # 4. Or drive everything from the full-screen UI
 bring
 ```
+
+### Any project, from anywhere — and your dotfiles ride along
+
+![bring lifecycle — ls, path targets, remove confirmation, dotfiles shell](https://raw.githubusercontent.com/RitvikCS/bring/main/demo/bring-lifecycle.gif)
+
+Actions take a path target (`bring ../api up`, `bring ~/code/etl down`), so
+you never have to `cd` first. And `bring up --dotfiles <repo-url>` installs
+your dotfiles into every container it creates — after one success the URL is
+remembered as your user default, so future containers just come out looking
+like home (`--dotfiles none` skips it once). Details in
+[docs/commands.md](docs/commands.md#dotfiles).
 
 A project counts as configured when it has
 `.devcontainer/devcontainer.json` or `.devcontainer.json` — the same rules

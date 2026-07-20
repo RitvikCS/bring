@@ -6,6 +6,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Demo GIFs in the README (`demo/`, excluded from the npm package).
+- `docs/commands.md`: the full command reference — every command, target
+  form (including `bring this up`), TUI key, option, exit code, dotfiles
+  behavior, and state location.
+
 ## [0.2.2] - 2026-07-19
 
 ### Changed
