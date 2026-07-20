@@ -1,7 +1,10 @@
 import { basename, relative } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { render } from 'ink';
-import { findExecutable } from '../adapters/find-executable.js';
+import {
+	findDevcontainerExecutable,
+	findExecutable,
+} from '../adapters/find-executable.js';
 import { bringDown } from '../application/bring-down.js';
 import { bringUp, resolveDotfiles } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
@@ -66,7 +69,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		return runLogs(stateDir, workspace, route.options.clear);
 	}
 
-	const devcontainerExe = findExecutable('devcontainer', env.PATH);
+	const devcontainerExe = findDevcontainerExecutable(env)?.path ?? null;
 	const dockerExe = findExecutable('docker', env.PATH);
 	if (devcontainerExe === null || dockerExe === null) {
 		const missing =

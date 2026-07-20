@@ -9,7 +9,13 @@ import { helpText } from './cli/help.js';
 import { parseArgv } from './cli/parse-argv.js';
 import { renderDoctorHuman, renderDoctorJson } from './cli/render-doctor.js';
 import { runDirect } from './cli/run-direct.js';
+import {
+	refreshUpdateCacheInBackground,
+	updateNotice,
+} from './cli/update-check.js';
 import { getVersion } from './cli/version.js';
+import { firstRunWelcome } from './cli/welcome.js';
+import { bringStateDir } from './stores/paths.js';
 import { stateFilePath } from './stores/workspace-store.js';
 import { App } from './tui/App.js';
 import { realEnvironment } from './tui/load.js';
@@ -130,3 +136,25 @@ async function runTui(section: Section): Promise<number> {
 }
 
 process.exitCode = await main();
+
+// Update notifier: read-only against a cache a detached child refreshes, so
+// no command ever waits on the network. Stderr-and-TTY-only keeps it out of
+// scripts, pipes, and --json output.
+if (
+	process.stderr.isTTY === true &&
+	process.env.BRING_NO_UPDATE_CHECK === undefined &&
+	!process.argv.includes('--json')
+) {
+	const stateDir = bringStateDir(process.env);
+	const paint = makePaint(process.env.NO_COLOR === undefined);
+	const welcome = firstRunWelcome(stateDir, getVersion());
+	if (welcome !== null) {
+		console.error('');
+		console.error(welcome.map((line) => paint('cyan', line)).join('\n'));
+	}
+	const notice = updateNotice(stateDir, getVersion());
+	if (notice !== null) {
+		console.error(paint('dim', notice));
+	}
+	refreshUpdateCacheInBackground(stateDir, process.env);
+}

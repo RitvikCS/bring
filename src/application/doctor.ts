@@ -1,5 +1,8 @@
 import { detectDevcontainerCapabilities } from '../adapters/devcontainer-capabilities.js';
-import { findExecutable } from '../adapters/find-executable.js';
+import {
+	findDevcontainerExecutable,
+	findExecutable,
+} from '../adapters/find-executable.js';
 import { probeCommand } from '../adapters/probe-command.js';
 import type { BringProblem } from '../core/errors.js';
 import { bringStateDir } from '../stores/paths.js';
@@ -77,24 +80,25 @@ async function checkDevcontainer(
 ): Promise<DoctorCheck[]> {
 	const cliLabel = 'Dev Containers CLI';
 	const capsLabel = 'CLI capabilities';
-	const executable = findExecutable('devcontainer', env.PATH);
+	const resolved = findDevcontainerExecutable(env);
 
-	if (executable === null) {
+	if (resolved === null) {
 		return [
 			{
 				id: 'devcontainer-cli',
 				label: cliLabel,
 				status: 'failed',
-				detail: 'not found on PATH',
+				detail: 'not found on PATH, and the bundled copy is missing',
 				problem: {
 					code: 'DEPENDENCY_MISSING',
 					summary: 'Bring needs the Dev Containers CLI.',
-					remedy: 'npm install -g @devcontainers/cli',
+					remedy: 'npm install -g @devcontainers/cli (or reinstall Bring)',
 				},
 			},
 			skipped('devcontainer-capabilities', capsLabel, 'CLI not found'),
 		];
 	}
+	const executable = resolved.path;
 
 	const version = await probeCommand(executable, ['--version'], probeOptions);
 	if (version.outcome !== 'completed' || version.exitCode !== 0) {
@@ -118,7 +122,9 @@ async function checkDevcontainer(
 		id: 'devcontainer-cli',
 		label: cliLabel,
 		status: 'ok',
-		detail: version.stdout.trim() || 'installed',
+		detail: `${version.stdout.trim() || 'installed'}${
+			resolved.source === 'bundled' ? ' (bundled with Bring)' : ''
+		}`,
 	};
 
 	const detection = await detectDevcontainerCapabilities(

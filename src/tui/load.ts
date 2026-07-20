@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs';
 import { basename } from 'node:path';
-import { findExecutable } from '../adapters/find-executable.js';
+import {
+	findDevcontainerExecutable,
+	findExecutable,
+} from '../adapters/find-executable.js';
 import { bringDown } from '../application/bring-down.js';
 import { bringUp } from '../application/bring-up.js';
 import {
@@ -83,7 +86,7 @@ export function realEnvironment(
 	const stateFile = stateFilePath(env);
 
 	const contextFor = (emit: EmitEvent): OperationContext | null => {
-		const devcontainerExe = findExecutable('devcontainer', env.PATH);
+		const devcontainerExe = findDevcontainerExecutable(env)?.path ?? null;
 		const dockerExe = findExecutable('docker', env.PATH);
 		if (devcontainerExe === null || dockerExe === null) {
 			return null;

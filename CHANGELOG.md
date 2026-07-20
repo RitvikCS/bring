@@ -6,8 +6,20 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-19
+
 ### Added
 
+- The Dev Containers CLI is now bundled as a dependency: `npm install -g
+  @ritvikcs/bring` plus Docker is a complete setup. A system-wide
+  `devcontainer` on PATH is still preferred when present; `bring doctor`
+  reports which copy is in use.
+- A one-time first-run welcome (short next-steps pointer after the first
+  command; shown once per machine, never again — not even after updates).
+- Update notifier: Bring now tells you when a newer version is on npm — a
+  dim stderr one-liner after a command, backed by a daily background check
+  that no command ever waits on. Opt out with `BRING_NO_UPDATE_CHECK=1`;
+  never shown in `--json` output or non-TTY contexts.
 - Demo GIFs in the README (`demo/`, excluded from the npm package).
 - `docs/commands.md`: the full command reference — every command, target
   form (including `bring this up`), TUI key, option, exit code, dotfiles

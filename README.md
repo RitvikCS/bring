@@ -50,11 +50,12 @@ manages them via Docker.)
 ## Requirements
 
 - Node.js 22+
-- [Dev Containers CLI](https://www.npmjs.com/package/@devcontainers/cli) (`npm i -g @devcontainers/cli`)
 - Docker
 
-Bring checks these at runtime (`bring doctor`) and explains what's missing —
-it never installs them for you.
+That's it — the [Dev Containers CLI](https://www.npmjs.com/package/@devcontainers/cli)
+comes bundled with Bring. If you already have `devcontainer` installed
+system-wide, Bring prefers your copy; otherwise it quietly uses its own
+(`bring doctor` tells you which one is answering).
 
 ## Quickstart
 

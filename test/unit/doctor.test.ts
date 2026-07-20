@@ -1,3 +1,5 @@
+import { symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearCapabilityCache } from '../../src/adapters/devcontainer-capabilities.js';
 import { type DoctorReport, runDoctor } from '../../src/application/doctor.js';
@@ -67,15 +69,43 @@ describe('runDoctor', () => {
 		const dir = makeBinDir();
 		writeFakeBin(dir, 'docker', HEALTHY_DOCKER);
 
-		const report = await doctorWith(dir);
+		// Without the opt-out, the copy Bring bundles as a dependency would be
+		// found and this scenario could never occur on a healthy install.
+		const report = await runDoctor({
+			env: {
+				PATH: dir,
+				HOME: '/home/test',
+				BRING_NO_BUNDLED_DEVCONTAINER: '1',
+			},
+			nodeVersion: 'v24.4.1',
+			timeoutMs: 2_000,
+		});
 
 		expect(report.healthy).toBe(false);
 		const cli = check(report, 'devcontainer-cli');
 		expect(cli.status).toBe('failed');
 		expect(cli.problem?.code).toBe('DEPENDENCY_MISSING');
-		expect(cli.problem?.remedy).toBe('npm install -g @devcontainers/cli');
+		expect(cli.problem?.remedy).toBe(
+			'npm install -g @devcontainers/cli (or reinstall Bring)',
+		);
 		expect(check(report, 'devcontainer-capabilities').status).toBe('skipped');
 		expect(check(report, 'docker-daemon').status).toBe('ok');
+	});
+
+	it('falls back to the bundled Dev Containers CLI when PATH has none', async () => {
+		const dir = makeBinDir();
+		writeFakeBin(dir, 'docker', HEALTHY_DOCKER);
+		// The bundled .bin shim is a `#!/usr/bin/env node` script; give the
+		// isolated PATH a real node without leaking a real devcontainer in.
+		symlinkSync(process.execPath, join(dir, 'node'));
+
+		const report = await doctorWith(dir);
+
+		// The dependency copy answers the probes, and doctor says which copy
+		// it is so a surprising version has an obvious explanation.
+		const cli = check(report, 'devcontainer-cli');
+		expect(cli.status).toBe('ok');
+		expect(cli.detail).toContain('(bundled with Bring)');
 	});
 
 	it('diagnoses a capability gap in the installed CLI', async () => {

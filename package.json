@@ -1,6 +1,6 @@
 {
 	"name": "@ritvikcs/bring",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"description": "Friendly terminal UI and command layer on top of the Dev Containers CLI",
 	"type": "module",
 	"license": "Apache-2.0",
@@ -41,6 +41,7 @@
 		"prepack": "npm run build"
 	},
 	"dependencies": {
+		"@devcontainers/cli": "^0.87.0",
 		"ink": "^7.1.0",
 		"react": "^19.2.7"
 	},

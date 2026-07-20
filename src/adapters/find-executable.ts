@@ -1,5 +1,6 @@
 import { accessSync, constants, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Resolve a bare executable name against a PATH string (P1-01).
@@ -41,4 +42,32 @@ function isExecutableFile(candidate: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Resolve the Dev Containers CLI: a system-wide `devcontainer` on PATH
+ * always wins (the user chose that version); otherwise fall back to the
+ * copy Bring ships as a dependency, so `npm install -g @ritvikcs/bring`
+ * plus Docker is a complete setup. Returns null only when neither exists
+ * (a broken install). BRING_NO_BUNDLED_DEVCONTAINER=1 disables the
+ * fallback — used by tests that need a "CLI missing" world.
+ */
+export function findDevcontainerExecutable(
+	env: NodeJS.ProcessEnv,
+): { path: string; source: 'path' | 'bundled' } | null {
+	const onPath = findExecutable('devcontainer', env.PATH);
+	if (onPath !== null) {
+		return { path: onPath, source: 'path' };
+	}
+	if (env.BRING_NO_BUNDLED_DEVCONTAINER !== undefined) {
+		return null;
+	}
+	// This file compiles to dist/adapters/, so ../../ is the package root
+	// both in the repo (src/adapters/) and in an installed copy.
+	const bundled = fileURLToPath(
+		new URL('../../node_modules/.bin/devcontainer', import.meta.url),
+	);
+	return isExecutableFile(bundled)
+		? { path: bundled, source: 'bundled' }
+		: null;
 }

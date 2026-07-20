@@ -85,7 +85,10 @@ scripts.
 ### `bring doctor`
 
 Checks the ground Bring stands on: Node, the Dev Containers CLI, and
-Docker — and explains exactly what is missing and how to fix it. The TUI
+Docker — and explains exactly what is missing and how to fix it. The Dev
+Containers CLI is bundled with Bring; a system-wide `devcontainer` on your
+PATH is preferred when present, and doctor's detail line says which copy is
+in use. The TUI
 runs the same checks on startup and shows the diagnosis instead of letting
 operations fail confusingly later.
 
@@ -158,6 +161,19 @@ its state until a `rebuild`).
 | 4 | a required dependency is missing or unreachable (`bring doctor`) |
 | 5 | internal Bring error |
 | 130 | interrupted with Ctrl+C |
+
+## Update notifications
+
+Bring checks the npm registry for a newer version at most once a day, in a
+detached background process — no command ever waits on the network. When a
+newer version is cached, a dim one-liner appears on stderr after a command
+(never in `--json` output, pipes, or scripts):
+
+```
+Update available 0.2.3 → 0.3.0 · npm install -g @ritvikcs/bring
+```
+
+Set `BRING_NO_UPDATE_CHECK=1` to disable the check entirely.
 
 ## Where state lives
 
