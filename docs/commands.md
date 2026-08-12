@@ -34,8 +34,8 @@ running it says so and exits successfully. A stopped container is restarted
 in about a second; a missing one is built from the config.
 
 Options: `--config <path>` (explicit devcontainer.json, remembered for next
-time), `--dotfiles <repo|none>` (see [Dotfiles](#dotfiles)), `--verbose`,
-`--json`.
+time), `--dotfiles <repo|none>` and `--profile <name|none>` (see
+[Dotfiles](#dotfiles)), `--verbose`, `--json`.
 
 ### `bring down`
 
@@ -98,10 +98,18 @@ Every project Bring knows, with live status (`running`, `stopped`,
 `not created`, `missing-config`) and its path. One Docker query for the
 whole list.
 
+### `bring forget <workspace>`
+
+Drops a workspace from Bring's registry — by name from `bring ls` or by
+path, even when the directory no longer exists. Containers, images, and
+source files are untouched; the workspace's captured operation logs are
+cleared with it. An ambiguous name lists the matching paths and asks for
+the full one.
+
 ## The full-screen interface
 
-Bare `bring` opens the TUI; `bring workspaces`, `bring containers`, or
-`bring images` opens it on a specific section.
+Bare `bring` opens the TUI; `bring workspaces`, `bring containers`,
+`bring images`, or `bring profiles` opens it on a specific section.
 
 | Key | Does |
 | --- | ---- |
@@ -115,6 +123,7 @@ Bare `bring` opens the TUI; `bring workspaces`, `bring containers`, or
 | `x` | request removal — always lands in a confirmation first |
 | `/` | filter the Containers/Images list (smart-case), `Esc` clears |
 | `Space`, `p` | Images: mark an image / review prunable dangling images |
+| `n` / `e` / `s` / `a` | Profiles: new / edit / toggle default / assign to a workspace |
 | `?` | keyboard help |
 | `q` / `Esc` | quit / back |
 
@@ -124,19 +133,43 @@ are never touched.
 
 ## Dotfiles
 
-`bring up --dotfiles <repo-url>` clones your dotfiles repository into the
-container and runs its `install.sh` when the container is **created** (this
-is the Dev Containers CLI's dotfiles mechanism — an existing container keeps
-its state until a `rebuild`).
+Dotfiles ride the Dev Containers CLI's own mechanism: the repo is cloned
+into the container and its install script runs when the container is
+**created** (an existing container keeps its state until a `rebuild`). The
+container image needs `git` for the clone — slim images often lack it; the
+devcontainers base images all have it.
 
-- After one successful use, the URL is **remembered as your user default**
-  and applied to every future container automatically — set it once, forget
-  it.
-- `--dotfiles none` skips the remembered default for one run.
-- The default lives in `state.json` (see below); delete its
-  `dotfilesRepository` line to clear it.
-- The container image needs `git` for the clone (slim images often lack it —
-  the devcontainers base images all have it).
+### Profiles
+
+The full mechanism is **named profiles**, managed in the TUI
+(`bring profiles`): each profile is a repository plus an optional install
+command and target path. Which profile applies to an `up`/`rebuild` follows
+a strict precedence:
+
+```
+--profile <name>  >  workspace assignment  >  default profile
+                  >  the only profile      >  no Bring dotfiles
+```
+
+- With several profiles and no default, interactive runs ask; scripts must
+  pass `--profile <name>` (or `none`).
+- `--profile none` skips Bring dotfiles for one run.
+- **First use of a profile shows its repository and install command and asks
+  before running** (`--yes` accepts in scripts). Editing a profile re-arms
+  that confirmation.
+- Profiles live in `~/.config/bring/config.json`
+  (`$XDG_CONFIG_HOME/bring/config.json`) — plain JSON, safe to hand-edit; a
+  config Bring cannot parse fails loudly instead of being ignored.
+- No profile command ever executes on the host, and your project's
+  `devcontainer.json` is never modified.
+
+### The quick way
+
+`bring up --dotfiles <repo-url>` still works without any profiles: after one
+successful use the URL is remembered as your user default and applied
+automatically; `--dotfiles none` skips it once. The first time profiles are
+loaded, an existing remembered URL is migrated into a `default` profile
+automatically.
 
 ## Options (all commands)
 
@@ -148,6 +181,7 @@ its state until a `rebuild`).
 | `--yes`, `-y` | skip the `remove` confirmation |
 | `--no-cache` | rebuild without the Docker build cache |
 | `--dotfiles <repo\|none>` | dotfiles repo for up/rebuild (remembered) |
+| `--profile <name\|none>` | dotfiles profile for up/rebuild (see Profiles) |
 | `--help`, `-h` / `--version`, `-v` | help / version |
 
 ## Exit codes
@@ -177,8 +211,14 @@ Set `BRING_NO_UPDATE_CHECK=1` to disable the check entirely.
 
 ## Where state lives
 
-Everything is under `~/.local/state/bring/` (or `$XDG_STATE_HOME/bring`):
-`state.json` (workspace registry + dotfiles default — plain JSON, safe to
-hand-edit), `logs/` (captured operation output), `locks/` (transient
-operation locks). Bring never stores anything inside your projects, and a
-deleted/corrupt state file is never an error — it just starts fresh.
+State is under `~/.local/state/bring/` (or `$XDG_STATE_HOME/bring`):
+`state.json` (workspace registry, dotfiles default, profile first-use
+confirmations — plain JSON, safe to hand-edit), `logs/` (captured operation
+output), `locks/` (transient operation locks). Bring never stores anything
+inside your projects, and a deleted/corrupt state file is never an error —
+it just starts fresh.
+
+Configuration — your dotfiles profiles — is separate, under
+`~/.config/bring/config.json` (or `$XDG_CONFIG_HOME/bring/config.json`),
+because it is intent you author rather than memory Bring keeps. Unlike
+state, a broken config file is reported loudly, never silently discarded.

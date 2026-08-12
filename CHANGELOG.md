@@ -8,6 +8,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Dotfiles profiles** (Phase 3): named profiles — repository, optional
+  install command, optional clone target — managed in a new Profiles TUI
+  pane (`bring profiles`: create/edit forms, delete, default toggle,
+  per-workspace assignment). Which profile applies to an `up`/`rebuild`
+  follows a strict precedence: `--profile` flag > workspace assignment >
+  default profile > the only profile > none. With several profiles and no
+  default, interactive runs ask and scripts require `--profile`; `--profile
+  none` skips Bring dotfiles for one run. The first use of a profile shows
+  its repository and install command and asks before running (`--yes` in
+  scripts); editing a profile re-arms the confirmation, and the needed
+  upstream CLI flags are verified on first use. Profiles live in
+  `~/.config/bring/config.json` (XDG) — hand-editable, validated loudly
+  (a broken config is an error, never silently ignored, exit code 2). An
+  existing remembered `--dotfiles` URL is migrated into a `default` profile
+  automatically. Zero profiles changes nothing; no profile command ever
+  executes on the host; project files are never touched.
+- `bring status` now shows which dotfiles profile would apply to the
+  workspace (and `--json` gained a `dotfilesProfile` field).
 - `bring forget <workspace>`: drop a remembered workspace from Bring's
   registry (by name from `bring ls` or by path — the directory may already
   be deleted). Containers, images, and source files are untouched; the
