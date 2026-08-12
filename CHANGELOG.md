@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-12
+
 ### Added
 
 - **Dotfiles profiles** (Phase 3): named profiles — repository, optional
