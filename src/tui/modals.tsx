@@ -3,6 +3,7 @@ import type {
 	DevContainerImageResource,
 	DevContainerResource,
 } from '../core/resources.js';
+import type { DotfilesProfile } from '../stores/profile-store.js';
 import { formatBytes } from './ImagesPane.js';
 import type { TuiWorkspace } from './state.js';
 
@@ -18,6 +19,7 @@ const HELP_ROWS: readonly [string, string][] = [
 	['u · d · e', 'workspace up · down/stop · shell'],
 	['r · L', 'rebuild/refresh · latest log'],
 	['x · p', 'confirmed removal · prune dangling images'],
+	['n/e · s · a', 'profile new/edit · default · assign'],
 	['/', 'filter Containers or Images'],
 	['Esc · q · ?', 'back/close · quit · help'],
 ];
@@ -160,6 +162,169 @@ export function ConfirmRebuild({ workspace }: { workspace: TuiWorkspace }) {
 			</Box>
 			<Box marginTop={1}>
 				<Text dimColor>[Enter] Rebuild [Esc] Cancel</Text>
+			</Box>
+		</Box>
+	);
+}
+
+export function ConfirmProfileDelete({
+	name,
+	assignedCount,
+	isDefault,
+}: {
+	name: string;
+	assignedCount: number;
+	isDefault: boolean;
+}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="red"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>Delete profile {name}?</Text>
+			<Box marginTop={1} flexDirection="column">
+				<Text>Only the profile entry is removed — nothing in any</Text>
+				<Text>container or repository is touched.</Text>
+				{isDefault && (
+					<Text color="yellow">It is the default profile right now.</Text>
+				)}
+				{assignedCount > 0 && (
+					<Text color="yellow">
+						{assignedCount} workspace{assignedCount === 1 ? '' : 's'} will lose
+						this override.
+					</Text>
+				)}
+			</Box>
+			<Box marginTop={1}>
+				<Text dimColor>[Enter] Delete [Esc] Cancel</Text>
+			</Box>
+		</Box>
+	);
+}
+
+/** §15.4: repository and install command are shown before first use. */
+export function ConfirmProfileUse({
+	name,
+	profile,
+}: {
+	name: string;
+	profile: DotfilesProfile;
+}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="yellow"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>First use of profile {name}</Text>
+			<Box marginTop={1} flexDirection="column">
+				<Text>This will run inside the container:</Text>
+				<Text>
+					<Text dimColor>repository </Text>
+					{profile.repository}
+				</Text>
+				<Text>
+					<Text dimColor>install </Text>
+					{profile.installCommand ?? 'repository default'}
+				</Text>
+				{profile.targetPath !== undefined && (
+					<Text>
+						<Text dimColor>target </Text>
+						{profile.targetPath}
+					</Text>
+				)}
+				<Text dimColor>Nothing executes on this machine.</Text>
+			</Box>
+			<Box marginTop={1}>
+				<Text dimColor>[Enter] Apply [n] Skip dotfiles [Esc] Cancel</Text>
+			</Box>
+		</Box>
+	);
+}
+
+export function ChooseProfile({
+	names,
+	index,
+	defaultHintKey = 's',
+}: {
+	names: readonly string[];
+	index: number;
+	defaultHintKey?: string;
+}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>Which dotfiles profile?</Text>
+			<Box marginTop={1} flexDirection="column">
+				{names.map((name, i) => (
+					<Text key={name} inverse={i === index} bold={i === index}>
+						○ {name}
+					</Text>
+				))}
+			</Box>
+			<Box marginTop={1} flexDirection="column">
+				<Text dimColor>
+					Several profiles exist and none is the default yet.
+				</Text>
+				<Text dimColor>
+					[Enter] Use once [{defaultHintKey}] Use + set default [n] No dotfiles
+					[Esc] Cancel
+				</Text>
+			</Box>
+		</Box>
+	);
+}
+
+export function AssignProfile({
+	name,
+	paths,
+	index,
+	workspaceProfiles,
+	workspaceName,
+}: {
+	name: string;
+	paths: readonly string[];
+	index: number;
+	workspaceProfiles: Record<string, string>;
+	workspaceName: (path: string) => string;
+}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>Assign profile {name} to a workspace</Text>
+			<Box marginTop={1} flexDirection="column">
+				{paths.map((path, i) => {
+					const assigned = workspaceProfiles[path];
+					return (
+						<Text key={path} inverse={i === index} bold={i === index}>
+							{assigned === name ? '●' : '○'} {workspaceName(path)}
+							{assigned !== undefined && <Text dimColor> ({assigned})</Text>}
+						</Text>
+					);
+				})}
+			</Box>
+			<Box marginTop={1} flexDirection="column">
+				<Text dimColor>
+					An assignment overrides the default profile for that workspace.
+				</Text>
+				<Text dimColor>[Enter] Assign / unassign [Esc] Close</Text>
 			</Box>
 		</Box>
 	);

@@ -22,6 +22,7 @@ import {
 	type ResourceInventoryResult,
 } from '../application/list-resources.js';
 import { openShell } from '../application/open-shell.js';
+import type { ResolvedDotfiles } from '../application/profiles.js';
 import { resolveTarget } from '../application/resolve-target.js';
 import type { BringProblem } from '../core/errors.js';
 import type { EmitEvent, OperationResult } from '../core/operation-events.js';
@@ -35,8 +36,22 @@ import type { WorkspaceRef } from '../core/types.js';
 import { workspaceIdentity } from '../core/workspace-resolver.js';
 import { readLatestLog, readLogTail } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
+import {
+	assignWorkspaceProfile,
+	type DotfilesProfile,
+	deleteProfile,
+	ensureProfileConfig,
+	type ProfileMutationResult,
+	profileConfigPath,
+	setDefaultProfile,
+	upsertProfile,
+} from '../stores/profile-store.js';
 import { loadState, stateFilePath } from '../stores/workspace-store.js';
-import { sanitizeLogLine, type TuiWorkspace } from './state.js';
+import {
+	sanitizeLogLine,
+	type TuiProfilesData,
+	type TuiWorkspace,
+} from './state.js';
 
 /**
  * Everything the TUI does to the world, behind one seam. App.tsx only calls
@@ -48,7 +63,7 @@ export interface TuiEnvironment {
 	load(options?: { includeImages?: boolean }): Promise<TuiData>;
 	up(
 		workspace: WorkspaceRef,
-		options: { rebuild?: boolean },
+		options: { rebuild?: boolean; dotfiles?: ResolvedDotfiles | null },
 		emit: EmitEvent,
 	): Promise<OperationResult>;
 	down(
@@ -69,6 +84,18 @@ export interface TuiEnvironment {
 		images: readonly DevContainerImageResource[],
 	): Promise<ImageRemovalResult>;
 	readLog(workspace: WorkspaceRef): string | null;
+	/** Profile store mutations (P3-06…P3-09); each persists atomically. */
+	saveProfile(
+		name: string,
+		profile: DotfilesProfile,
+		originalName?: string,
+	): Promise<ProfileMutationResult>;
+	deleteProfile(name: string): Promise<ProfileMutationResult>;
+	setDefaultProfile(name: string | null): Promise<ProfileMutationResult>;
+	assignWorkspaceProfile(
+		workspacePath: string,
+		name: string | null,
+	): Promise<ProfileMutationResult>;
 }
 
 export interface TuiData {
@@ -76,6 +103,7 @@ export interface TuiData {
 	resources: ResourceInventory;
 	resourceProblem: BringProblem | null;
 	dotfilesRepository: string | null;
+	profiles: TuiProfilesData;
 }
 
 export function realEnvironment(
@@ -84,6 +112,7 @@ export function realEnvironment(
 ): TuiEnvironment {
 	const stateDir = bringStateDir(env);
 	const stateFile = stateFilePath(env);
+	const configFile = profileConfigPath(env);
 
 	const contextFor = (emit: EmitEvent): OperationContext | null => {
 		const devcontainerExe = findDevcontainerExecutable(env)?.path ?? null;
@@ -155,17 +184,35 @@ export function realEnvironment(
 				});
 				listed.push({ ...current, unregistered: true });
 			}
+			const profileResult = ensureProfileConfig(configFile, stateFile);
+			const profiles: TuiProfilesData = profileResult.ok
+				? {
+						available: profileResult.config.profiles,
+						defaultProfile: profileResult.config.defaultProfile ?? null,
+						workspaceProfiles: profileResult.config.workspaceProfiles,
+						confirmations: storedState.profileConfirmations ?? {},
+						problem: null,
+					}
+				: {
+						available: {},
+						defaultProfile: null,
+						workspaceProfiles: {},
+						confirmations: {},
+						problem: profileResult.problem,
+					};
 			return {
 				workspaces: listed,
 				resources,
 				resourceProblem: resourceResult.ok ? null : resourceResult.problem,
 				dotfilesRepository: storedState.dotfilesRepository ?? null,
+				profiles,
 			};
 		},
 		up: (workspace, options, emit) =>
 			bringUp(mustContext(emit), workspace, {
 				config: workspace.configPath,
 				rebuild: options.rebuild,
+				dotfiles: options.dotfiles,
 			}),
 		down: (workspace, options, emit) =>
 			bringDown(mustContext(emit), workspace, options),
@@ -193,6 +240,13 @@ export function realEnvironment(
 				images,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
+		saveProfile: async (name, profile, originalName) =>
+			upsertProfile(configFile, stateFile, name, profile, originalName),
+		deleteProfile: async (name) => deleteProfile(configFile, stateFile, name),
+		setDefaultProfile: async (name) =>
+			setDefaultProfile(configFile, stateFile, name),
+		assignWorkspaceProfile: async (workspacePath, name) =>
+			assignWorkspaceProfile(configFile, stateFile, workspacePath, name),
 	};
 }
 

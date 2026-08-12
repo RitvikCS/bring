@@ -1,4 +1,8 @@
 import type { DoctorReport } from '../application/doctor.js';
+import {
+	type DotfilesResolution,
+	resolveRunDotfiles,
+} from '../application/profiles.js';
 import type { BringProblem } from '../core/errors.js';
 import type {
 	OperationKind,
@@ -17,6 +21,10 @@ import type {
 	WorkspaceRef,
 	WorkspaceStatus,
 } from '../core/types.js';
+import {
+	type DotfilesProfile,
+	PROFILE_NAME_PATTERN,
+} from '../stores/profile-store.js';
 
 // TUI state (spec §11.5): a pure reducer over everything the screen shows.
 // Effects (doctor, snapshots, operations, the shell) live in App.tsx and
@@ -60,7 +68,52 @@ export type Modal =
 	| { kind: 'confirm-remove'; workspacePath: string }
 	| { kind: 'confirm-rebuild'; workspacePath: string }
 	| { kind: 'confirm-container-remove'; containerId: string }
-	| { kind: 'confirm-image-remove'; imageIds: string[] };
+	| { kind: 'confirm-image-remove'; imageIds: string[] }
+	| { kind: 'confirm-profile-delete'; name: string }
+	// §15.4 first-use confirmation, holding the operation it interrupts.
+	| {
+			kind: 'confirm-profile-use';
+			name: string;
+			operation: 'up' | 'rebuild';
+			workspacePath: string;
+	  }
+	// Several profiles, no default (§12.7 selection rules): pick for one run.
+	| {
+			kind: 'choose-profile';
+			names: string[];
+			index: number;
+			operation: 'up' | 'rebuild';
+			workspacePath: string;
+	  }
+	// P3-09: apply/remove the selected profile as a workspace override.
+	| { kind: 'assign-profile'; name: string; paths: string[]; index: number };
+
+/** The profile knowledge the TUI renders and resolves against. */
+export interface TuiProfilesData {
+	available: Record<string, DotfilesProfile>;
+	defaultProfile: string | null;
+	workspaceProfiles: Record<string, string>;
+	confirmations: Record<string, string>;
+	problem: BringProblem | null;
+}
+
+export interface ProfileFormFields {
+	name: string;
+	repository: string;
+	installCommand: string;
+	targetPath: string;
+}
+
+export interface ProfileFormState {
+	mode: 'create' | 'edit';
+	originalName: string | null;
+	fields: ProfileFormFields;
+	/** 0 name · 1 repository · 2 install command · 3 target path. */
+	focus: number;
+	error: string | null;
+}
+
+export const PROFILE_FORM_FIELD_COUNT = 4;
 
 export interface ResourceOperation {
 	kind: 'stop-container' | 'remove-container' | 'remove-images';
@@ -121,6 +174,14 @@ export interface TuiState {
 	statusMessage: string;
 	/** The user-wide dotfiles default (A6), shown in the detail pane. */
 	dotfilesRepository: string | null;
+	/** Dotfiles profiles (Phase 3) as loaded from the config store. */
+	profiles: Record<string, DotfilesProfile>;
+	defaultProfile: string | null;
+	workspaceProfiles: Record<string, string>;
+	profileConfirmations: Record<string, string>;
+	profilesProblem: BringProblem | null;
+	selectedProfileName: string | null;
+	profileForm: ProfileFormState | null;
 }
 
 export const INITIAL_STATE: TuiState = {
@@ -145,6 +206,13 @@ export const INITIAL_STATE: TuiState = {
 	resourceOperation: null,
 	statusMessage: 'Checking your setup…',
 	dotfilesRepository: null,
+	profiles: {},
+	defaultProfile: null,
+	workspaceProfiles: {},
+	profileConfirmations: {},
+	profilesProblem: null,
+	selectedProfileName: null,
+	profileForm: null,
 };
 
 export type TuiAction =
@@ -155,6 +223,7 @@ export type TuiAction =
 			resources?: ResourceInventory;
 			resourceProblem?: BringProblem | null;
 			dotfilesRepository?: string | null;
+			profiles?: TuiProfilesData;
 	  }
 	| {
 			type: 'refreshed';
@@ -162,6 +231,7 @@ export type TuiAction =
 			resources?: ResourceInventory;
 			resourceProblem?: BringProblem | null;
 			dotfilesRepository?: string | null;
+			profiles?: TuiProfilesData;
 	  }
 	| { type: 'retry-loading' }
 	| { type: 'move-selection'; delta: 1 | -1 }
@@ -184,6 +254,27 @@ export type TuiAction =
 	| { type: 'cancel-filter' }
 	| { type: 'clear-filter' }
 	| { type: 'close-modal' }
+	| { type: 'open-profile-form'; mode: 'create' | 'edit' }
+	| { type: 'profile-form-input'; text: string }
+	| { type: 'profile-form-backspace' }
+	| { type: 'profile-form-focus'; delta: 1 | -1 }
+	| { type: 'profile-form-error'; message: string }
+	| { type: 'close-profile-form' }
+	| { type: 'open-confirm-profile-delete' }
+	| {
+			type: 'open-confirm-profile-use';
+			name: string;
+			operation: 'up' | 'rebuild';
+			workspacePath: string;
+	  }
+	| {
+			type: 'open-choose-profile';
+			names: string[];
+			operation: 'up' | 'rebuild';
+			workspacePath: string;
+	  }
+	| { type: 'open-assign-profile'; paths: string[] }
+	| { type: 'modal-move'; delta: 1 | -1 }
 	| {
 			type: 'resource-operation-started';
 			kind: ResourceOperation['kind'];
@@ -275,6 +366,117 @@ export function selectedImages(state: TuiState): DevContainerImageResource[] {
 	);
 }
 
+/** §12.7 list order: the default profile leads, the rest alphabetical. */
+export function orderedProfileNames(state: TuiState): string[] {
+	return Object.keys(state.profiles).sort((a, b) => {
+		if (a === state.defaultProfile) {
+			return -1;
+		}
+		if (b === state.defaultProfile) {
+			return 1;
+		}
+		return a.localeCompare(b);
+	});
+}
+
+export function selectedProfile(
+	state: TuiState,
+): { name: string; profile: DotfilesProfile } | null {
+	if (state.selectedProfileName === null) {
+		return null;
+	}
+	const profile = state.profiles[state.selectedProfileName];
+	return profile === undefined
+		? null
+		: { name: state.selectedProfileName, profile };
+}
+
+/**
+ * The profile that WOULD apply to a workspace with no flags involved
+ * (override > default > only profile) — what the detail panes display.
+ */
+export function effectiveProfileName(
+	state: TuiState,
+	workspacePath: string,
+): string | null {
+	const assigned = state.workspaceProfiles[workspacePath];
+	if (assigned !== undefined && state.profiles[assigned] !== undefined) {
+		return assigned;
+	}
+	if (state.defaultProfile !== null) {
+		return state.defaultProfile;
+	}
+	const names = Object.keys(state.profiles);
+	return names.length === 1 ? (names[0] as string) : null;
+}
+
+/**
+ * Resolve the dotfiles for a TUI-triggered up/rebuild against the loaded
+ * profile data — the same §15.3 precedence the direct CLI uses.
+ */
+export function resolveTuiDotfiles(
+	state: TuiState,
+	workspacePath: string,
+	flagProfile?: string,
+): DotfilesResolution {
+	return resolveRunDotfiles(
+		{
+			schemaVersion: 1,
+			profiles: state.profiles,
+			...(state.defaultProfile !== null
+				? { defaultProfile: state.defaultProfile }
+				: {}),
+			workspaceProfiles: state.workspaceProfiles,
+		},
+		{
+			schemaVersion: 1,
+			workspaces: [],
+			...(state.dotfilesRepository !== null
+				? { dotfilesRepository: state.dotfilesRepository }
+				: {}),
+			profileConfirmations: state.profileConfirmations,
+		},
+		{ workspacePath, flagProfile },
+	);
+}
+
+export type ProfileFormValidation =
+	| { ok: true; name: string; profile: DotfilesProfile }
+	| { ok: false; error: string };
+
+/** Pure form validation (P3-07) — App only calls the store when this passes. */
+export function validateProfileForm(
+	form: ProfileFormState,
+	profiles: Record<string, DotfilesProfile>,
+): ProfileFormValidation {
+	const name = form.fields.name.trim();
+	const repository = form.fields.repository.trim();
+	if (!PROFILE_NAME_PATTERN.test(name)) {
+		return {
+			ok: false,
+			error:
+				'Name must use letters, digits, dots, dashes, or underscores (no spaces).',
+		};
+	}
+	if (repository === '') {
+		return { ok: false, error: 'Repository is required.' };
+	}
+	if (name !== form.originalName && profiles[name] !== undefined) {
+		return { ok: false, error: `A profile named ${name} already exists.` };
+	}
+	const installCommand = form.fields.installCommand.trim();
+	const targetPath = form.fields.targetPath.trim();
+	return {
+		ok: true,
+		name,
+		profile: {
+			repository,
+			...(installCommand === '' ? {} : { installCommand }),
+			...(targetPath === '' ? {} : { targetPath }),
+		},
+	};
+}
+
 export function visibleContainers(state: TuiState): DevContainerResource[] {
 	const query = state.filters.containers;
 	return state.containers.filter((container) =>
@@ -318,6 +520,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 					action.dotfilesRepository !== undefined
 						? action.dotfilesRepository
 						: state.dotfilesRepository,
+				...applyProfilesData(state, action.profiles),
 				workspaces,
 				selectedPath: workspaces[0]?.ref.rootPath ?? null,
 				containers: resources.containers,
@@ -382,6 +585,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 					action.dotfilesRepository !== undefined
 						? action.dotfilesRepository
 						: state.dotfilesRepository,
+				...applyProfilesData(state, action.profiles),
 				selectedPath: stillThere
 					? state.selectedPath
 					: (workspaces[0]?.ref.rootPath ?? null),
@@ -401,6 +605,15 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 			};
 		}
 		case 'move-selection': {
+			if (state.section === 'profiles') {
+				const names = orderedProfileNames(state);
+				const index =
+					state.selectedProfileName === null
+						? -1
+						: names.indexOf(state.selectedProfileName);
+				const next = clampedIndex(index, action.delta, names.length);
+				return { ...state, selectedProfileName: names[next] ?? null };
+			}
 			if (state.section === 'containers') {
 				const containers = visibleContainers(state);
 				const index = containers.findIndex(
@@ -444,6 +657,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				focusedPane: 'list',
 				detailOpen: false,
 				filterInput: null,
+				profileForm: null,
 			};
 		}
 		case 'set-section':
@@ -453,6 +667,7 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				focusedPane: 'list',
 				detailOpen: false,
 				filterInput: null,
+				profileForm: null,
 			};
 		case 'focus-pane':
 			return { ...state, focusedPane: action.pane };
@@ -597,6 +812,177 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 				: state;
 		case 'close-modal':
 			return { ...state, modal: null };
+		case 'open-profile-form': {
+			if (action.mode === 'create') {
+				return {
+					...state,
+					profileForm: {
+						mode: 'create',
+						originalName: null,
+						fields: {
+							name: '',
+							repository: '',
+							installCommand: '',
+							targetPath: '',
+						},
+						focus: 0,
+						error: null,
+					},
+				};
+			}
+			const selected = selectedProfile(state);
+			if (selected === null) {
+				return state;
+			}
+			return {
+				...state,
+				profileForm: {
+					mode: 'edit',
+					originalName: selected.name,
+					fields: {
+						name: selected.name,
+						repository: selected.profile.repository,
+						installCommand: selected.profile.installCommand ?? '',
+						targetPath: selected.profile.targetPath ?? '',
+					},
+					focus: 0,
+					error: null,
+				},
+			};
+		}
+		case 'profile-form-input': {
+			if (state.profileForm === null) {
+				return state;
+			}
+			const key = FORM_FIELD_KEYS[state.profileForm.focus];
+			if (key === undefined) {
+				return state;
+			}
+			return {
+				...state,
+				profileForm: {
+					...state.profileForm,
+					error: null,
+					fields: {
+						...state.profileForm.fields,
+						[key]: `${state.profileForm.fields[key]}${action.text}`,
+					},
+				},
+			};
+		}
+		case 'profile-form-backspace': {
+			if (state.profileForm === null) {
+				return state;
+			}
+			const key = FORM_FIELD_KEYS[state.profileForm.focus];
+			if (key === undefined) {
+				return state;
+			}
+			return {
+				...state,
+				profileForm: {
+					...state.profileForm,
+					error: null,
+					fields: {
+						...state.profileForm.fields,
+						[key]: [...state.profileForm.fields[key]].slice(0, -1).join(''),
+					},
+				},
+			};
+		}
+		case 'profile-form-focus': {
+			if (state.profileForm === null) {
+				return state;
+			}
+			const focus =
+				(state.profileForm.focus + action.delta + PROFILE_FORM_FIELD_COUNT) %
+				PROFILE_FORM_FIELD_COUNT;
+			return { ...state, profileForm: { ...state.profileForm, focus } };
+		}
+		case 'profile-form-error':
+			return state.profileForm === null
+				? state
+				: {
+						...state,
+						profileForm: { ...state.profileForm, error: action.message },
+					};
+		case 'close-profile-form':
+			return { ...state, profileForm: null };
+		case 'open-confirm-profile-delete': {
+			const selected = selectedProfile(state);
+			if (selected === null) {
+				return state;
+			}
+			return {
+				...state,
+				modal: { kind: 'confirm-profile-delete', name: selected.name },
+			};
+		}
+		case 'open-confirm-profile-use':
+			return {
+				...state,
+				modal: {
+					kind: 'confirm-profile-use',
+					name: action.name,
+					operation: action.operation,
+					workspacePath: action.workspacePath,
+				},
+			};
+		case 'open-choose-profile':
+			return {
+				...state,
+				modal: {
+					kind: 'choose-profile',
+					names: action.names,
+					index: 0,
+					operation: action.operation,
+					workspacePath: action.workspacePath,
+				},
+			};
+		case 'open-assign-profile': {
+			const selected = selectedProfile(state);
+			if (selected === null || action.paths.length === 0) {
+				return state;
+			}
+			return {
+				...state,
+				modal: {
+					kind: 'assign-profile',
+					name: selected.name,
+					paths: action.paths,
+					index: 0,
+				},
+			};
+		}
+		case 'modal-move': {
+			if (state.modal?.kind === 'choose-profile') {
+				return {
+					...state,
+					modal: {
+						...state.modal,
+						index: clampedIndex(
+							state.modal.index,
+							action.delta,
+							state.modal.names.length,
+						),
+					},
+				};
+			}
+			if (state.modal?.kind === 'assign-profile') {
+				return {
+					...state,
+					modal: {
+						...state.modal,
+						index: clampedIndex(
+							state.modal.index,
+							action.delta,
+							state.modal.paths.length,
+						),
+					},
+				};
+			}
+			return state;
+		}
 		case 'resource-operation-started':
 			return {
 				...state,
@@ -813,6 +1199,45 @@ function matchesImage(
 
 function emptyResources(): ResourceInventory {
 	return { containers: [], images: [], refreshedAt: '' };
+}
+
+const FORM_FIELD_KEYS: readonly (keyof ProfileFormFields)[] = [
+	'name',
+	'repository',
+	'installCommand',
+	'targetPath',
+];
+
+/**
+ * Fold fresh profile data into the state, keeping the selection stable when
+ * its profile survived and never leaving it dangling when one vanished.
+ */
+function applyProfilesData(
+	state: TuiState,
+	data: TuiProfilesData | undefined,
+): Partial<TuiState> {
+	if (data === undefined) {
+		return {};
+	}
+	const next: TuiState = {
+		...state,
+		profiles: data.available,
+		defaultProfile: data.defaultProfile,
+	};
+	const names = orderedProfileNames(next);
+	const stillThere =
+		state.selectedProfileName !== null &&
+		names.includes(state.selectedProfileName);
+	return {
+		profiles: data.available,
+		defaultProfile: data.defaultProfile,
+		workspaceProfiles: data.workspaceProfiles,
+		profileConfirmations: data.confirmations,
+		profilesProblem: data.problem,
+		selectedProfileName: stillThere
+			? state.selectedProfileName
+			: (names[0] ?? null),
+	};
 }
 
 function clampedIndex(index: number, delta: 1 | -1, length: number): number {

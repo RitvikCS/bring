@@ -451,8 +451,20 @@ async function runStatus(
 		return exitCodeForProblem(result.problem.code);
 	}
 	const s = result.snapshot;
-	const dotfilesRepository =
-		loadState(ctx.stateFile).dotfilesRepository ?? null;
+	const state = loadState(ctx.stateFile);
+	const dotfilesRepository = state.dotfilesRepository ?? null;
+	// What dotfiles WOULD apply to an `up` right now (§15.3), for display.
+	const profileConfig = ensureProfileConfig(
+		profileConfigPath(ctx.env),
+		ctx.stateFile,
+	);
+	const effective = profileConfig.ok
+		? resolveRunDotfiles(profileConfig.config, state, {
+				workspacePath: workspace.rootPath,
+			})
+		: null;
+	const effectiveDotfiles =
+		effective?.outcome === 'resolved' ? effective.dotfiles : null;
 	if (json) {
 		console.log(
 			JSON.stringify(
@@ -467,6 +479,7 @@ async function runStatus(
 					imageNames: s.imageNames,
 					forwardedPorts: s.forwardedPorts,
 					dotfilesRepository,
+					dotfilesProfile: effectiveDotfiles?.profileName ?? null,
 				},
 				null,
 				2,
@@ -502,7 +515,21 @@ async function runStatus(
 				.join(', ')}`,
 		);
 	}
-	if (dotfilesRepository !== null) {
+	if (effectiveDotfiles?.source === 'profile') {
+		lines.push(
+			`  ${label('dotfiles')}${effectiveDotfiles.profileName} ${paint(
+				'dim',
+				`(profile → ${effectiveDotfiles.repository})`,
+			)}`,
+		);
+	} else if (effective?.outcome === 'choose') {
+		lines.push(
+			`  ${label('dotfiles')}${paint(
+				'dim',
+				`several profiles, no default — up will ask (${effective.names.join(', ')})`,
+			)}`,
+		);
+	} else if (dotfilesRepository !== null) {
 		lines.push(
 			`  ${label('dotfiles')}${dotfilesRepository} ${paint('dim', '(user default)')}`,
 		);

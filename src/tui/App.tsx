@@ -6,6 +6,7 @@ import {
 	useReducer,
 	useRef,
 } from 'react';
+import type { ResolvedDotfiles } from '../application/profiles.js';
 import type {
 	OperationKind,
 	OperationResult,
@@ -30,24 +31,34 @@ import {
 } from './layout.js';
 import type { TuiEnvironment } from './load.js';
 import {
+	AssignProfile,
+	ChooseProfile,
 	ConfirmContainerRemove,
 	ConfirmImageRemove,
+	ConfirmProfileDelete,
+	ConfirmProfileUse,
 	ConfirmRebuild,
 	ConfirmRemove,
 	HelpOverlay,
 } from './modals.js';
 import { OperationView } from './OperationView.js';
+import { ProfileDetail, ProfileForm, ProfileList } from './ProfilesPane.js';
 import {
+	effectiveProfileName,
 	INITIAL_STATE,
+	orderedProfileNames,
 	reduce,
+	resolveTuiDotfiles,
 	SECTIONS,
 	type Section,
 	selectedContainer,
 	selectedImage,
 	type selectedImages,
+	selectedProfile,
 	selectedWorkspace,
 	type TuiState,
 	type TuiWorkspace,
+	validateProfileForm,
 	visibleContainers,
 	visibleImages,
 } from './state.js';
@@ -152,6 +163,7 @@ export function App({
 						resources: data.resources,
 						resourceProblem: data.resourceProblem,
 						dotfilesRepository: data.dotfilesRepository,
+						profiles: data.profiles,
 					});
 					if (queuedRefreshRef.current === undefined) {
 						return;
@@ -191,6 +203,7 @@ export function App({
 					resources: data.resources,
 					resourceProblem: data.resourceProblem,
 					dotfilesRepository: data.dotfilesRepository,
+					profiles: data.profiles,
 				});
 			}
 		})();
@@ -221,13 +234,17 @@ export function App({
 	}, [state.phase, refresh]);
 
 	const runMutation = useCallback(
-		(kind: OperationKind, workspace: TuiWorkspace) => {
+		(
+			kind: OperationKind,
+			workspace: TuiWorkspace,
+			dotfiles?: ResolvedDotfiles | null,
+		) => {
 			dispatch({ type: 'operation-started', operation: kind, workspace });
 			const operation =
 				kind === 'up' || kind === 'rebuild'
 					? environment.up(
 							workspace.ref,
-							{ rebuild: kind === 'rebuild' },
+							{ rebuild: kind === 'rebuild', dotfiles },
 							(event) => {
 								if (event.type === 'stage') {
 									dispatch({
@@ -272,6 +289,58 @@ export function App({
 				});
 		},
 		[environment, refresh],
+	);
+
+	/**
+	 * Up/rebuild goes through profile resolution first (§15.3): an invalid
+	 * config blocks loudly, several-profiles-no-default asks, and a profile's
+	 * first use confirms (§15.4) — only then does the operation start.
+	 */
+	const startWorkspaceMutation = useCallback(
+		(kind: 'up' | 'rebuild', workspace: TuiWorkspace) => {
+			const current = stateRef.current;
+			if (current.profilesProblem !== null) {
+				dispatch({
+					type: 'status-message',
+					message: `! ${current.profilesProblem.summary} ${current.profilesProblem.remedy ?? ''}`,
+				});
+				return;
+			}
+			const resolution = resolveTuiDotfiles(current, workspace.ref.rootPath);
+			if (resolution.outcome === 'failed') {
+				dispatch({
+					type: 'status-message',
+					message: `! ${resolution.problem.summary}`,
+				});
+				return;
+			}
+			if (resolution.outcome === 'choose') {
+				modalOpenedAtRef.current = Date.now();
+				dispatch({
+					type: 'open-choose-profile',
+					names: resolution.names,
+					operation: kind,
+					workspacePath: workspace.ref.rootPath,
+				});
+				return;
+			}
+			const dotfiles = resolution.dotfiles;
+			if (
+				dotfiles?.needsConfirmation === true &&
+				dotfiles.profileName !== undefined
+			) {
+				modalOpenedAtRef.current = Date.now();
+				dispatch({
+					type: 'open-confirm-profile-use',
+					name: dotfiles.profileName,
+					operation: kind,
+					workspacePath: workspace.ref.rootPath,
+				});
+				return;
+			}
+			runMutation(kind, workspace, dotfiles);
+		},
+		[runMutation],
 	);
 
 	const runContainerMutation = useCallback(
@@ -496,6 +565,12 @@ export function App({
 						}
 						return;
 					}
+					if (current.section === 'profiles') {
+						if (selectedProfile(current) !== null) {
+							dispatch({ type: 'open-detail' });
+						}
+						return;
+					}
 					if (selected === null || current.section !== 'workspaces') {
 						return;
 					}
@@ -512,7 +587,7 @@ export function App({
 						selected.status === 'stopped' ||
 						selected.status === 'not-created'
 					) {
-						runMutation('up', selected);
+						startWorkspaceMutation('up', selected);
 					} else {
 						dispatch({ type: 'open-detail' });
 					}
@@ -553,7 +628,7 @@ export function App({
 						});
 						return;
 					}
-					runMutation('up', selected);
+					startWorkspaceMutation('up', selected);
 					return;
 				case 'workspace-down':
 					if (current.section === 'containers') {
@@ -654,6 +729,13 @@ export function App({
 						dispatch({ type: 'open-confirm-image-remove' });
 						return;
 					}
+					if (current.section === 'profiles') {
+						if (selectedProfile(current) !== null) {
+							modalOpenedAtRef.current = Date.now();
+							dispatch({ type: 'open-confirm-profile-delete' });
+						}
+						return;
+					}
 					if (selected === null || busy(selected)) {
 						return;
 					}
@@ -669,12 +751,7 @@ export function App({
 					return;
 				case 'confirm-modal': {
 					const modal = current.modal;
-					if (
-						modal?.kind !== 'confirm-remove' &&
-						modal?.kind !== 'confirm-rebuild' &&
-						modal?.kind !== 'confirm-container-remove' &&
-						modal?.kind !== 'confirm-image-remove'
-					) {
+					if (modal === null || modal.kind === 'help') {
 						return;
 					}
 					// A confirmation must be a deliberate second keystroke: an
@@ -701,15 +778,97 @@ export function App({
 						runImageRemoval(targets);
 						return;
 					}
+					if (modal.kind === 'confirm-profile-delete') {
+						dispatch({ type: 'close-modal' });
+						void environment.deleteProfile(modal.name).then(async (result) => {
+							dispatch({
+								type: 'status-message',
+								message: `${result.ok ? '✓' : '✗'} ${result.message}`,
+							});
+							await refresh('profiles');
+						});
+						return;
+					}
+					if (modal.kind === 'confirm-profile-use') {
+						const target = current.workspaces.find(
+							(w) => w.ref.rootPath === modal.workspacePath,
+						);
+						dispatch({ type: 'close-modal' });
+						if (target === undefined) {
+							return;
+						}
+						const resolution = resolveTuiDotfiles(
+							current,
+							modal.workspacePath,
+							modal.name,
+						);
+						if (resolution.outcome === 'resolved') {
+							// needsConfirmation stays set: bringUp probes capability
+							// on first use and records the confirmation after success.
+							runMutation(modal.operation, target, resolution.dotfiles);
+						}
+						return;
+					}
+					if (modal.kind === 'choose-profile') {
+						const name = modal.names[modal.index];
+						const target = current.workspaces.find(
+							(w) => w.ref.rootPath === modal.workspacePath,
+						);
+						dispatch({ type: 'close-modal' });
+						if (name === undefined || target === undefined) {
+							return;
+						}
+						const resolution = resolveTuiDotfiles(
+							current,
+							modal.workspacePath,
+							name,
+						);
+						if (resolution.outcome !== 'resolved') {
+							return;
+						}
+						if (resolution.dotfiles?.needsConfirmation === true) {
+							modalOpenedAtRef.current = Date.now();
+							dispatch({
+								type: 'open-confirm-profile-use',
+								name,
+								operation: modal.operation,
+								workspacePath: modal.workspacePath,
+							});
+							return;
+						}
+						runMutation(modal.operation, target, resolution.dotfiles);
+						return;
+					}
+					if (modal.kind === 'assign-profile') {
+						const path = modal.paths[modal.index];
+						if (path === undefined) {
+							return;
+						}
+						const next =
+							current.workspaceProfiles[path] === modal.name
+								? null
+								: modal.name;
+						void environment
+							.assignWorkspaceProfile(path, next)
+							.then(async (result) => {
+								dispatch({
+									type: 'status-message',
+									message: `${result.ok ? '✓' : '✗'} ${result.message}`,
+								});
+								await refresh('profiles');
+							});
+						return;
+					}
 					const target = current.workspaces.find(
 						(w) => w.ref.rootPath === modal.workspacePath,
 					);
 					dispatch({ type: 'close-modal' });
 					if (target !== undefined) {
-						runMutation(
-							modal.kind === 'confirm-remove' ? 'remove' : 'rebuild',
-							target,
-						);
+						if (modal.kind === 'confirm-remove') {
+							runMutation('remove', target);
+						} else {
+							startWorkspaceMutation('rebuild', target);
+						}
 					}
 					return;
 				}
@@ -768,12 +927,167 @@ export function App({
 				case 'clear-filter':
 					dispatch({ type: 'clear-filter' });
 					return;
+				case 'profile-new':
+					if (current.section === 'profiles') {
+						dispatch({ type: 'open-profile-form', mode: 'create' });
+					}
+					return;
+				case 'profile-edit':
+					if (
+						current.section === 'profiles' &&
+						selectedProfile(current) !== null
+					) {
+						dispatch({ type: 'open-profile-form', mode: 'edit' });
+					}
+					return;
+				case 'profile-default': {
+					const profile = selectedProfile(current);
+					if (current.section !== 'profiles' || profile === null) {
+						return;
+					}
+					const next =
+						current.defaultProfile === profile.name ? null : profile.name;
+					void environment.setDefaultProfile(next).then(async (result) => {
+						dispatch({
+							type: 'status-message',
+							message: `${result.ok ? '✓' : '✗'} ${result.message}`,
+						});
+						await refresh('profiles');
+					});
+					return;
+				}
+				case 'profile-assign': {
+					const profile = selectedProfile(current);
+					if (current.section !== 'profiles' || profile === null) {
+						return;
+					}
+					const paths = current.workspaces.map((w) => w.ref.rootPath);
+					if (paths.length === 0) {
+						dispatch({
+							type: 'status-message',
+							message:
+								'No workspaces remembered yet — assignments need a `bring up` first.',
+						});
+						return;
+					}
+					modalOpenedAtRef.current = Date.now();
+					dispatch({ type: 'open-assign-profile', paths });
+					return;
+				}
+				case 'profile-form-input':
+					dispatch({ type: 'profile-form-input', text: command.text });
+					return;
+				case 'profile-form-backspace':
+					dispatch({ type: 'profile-form-backspace' });
+					return;
+				case 'profile-form-focus':
+					dispatch({ type: 'profile-form-focus', delta: command.delta });
+					return;
+				case 'profile-form-cancel':
+					dispatch({ type: 'close-profile-form' });
+					return;
+				case 'profile-form-submit': {
+					const form = current.profileForm;
+					if (form === null) {
+						return;
+					}
+					const validation = validateProfileForm(form, current.profiles);
+					if (!validation.ok) {
+						dispatch({ type: 'profile-form-error', message: validation.error });
+						return;
+					}
+					void environment
+						.saveProfile(
+							validation.name,
+							validation.profile,
+							form.originalName ?? undefined,
+						)
+						.then(async (result) => {
+							if (!result.ok) {
+								dispatch({
+									type: 'profile-form-error',
+									message: result.message,
+								});
+								return;
+							}
+							dispatch({ type: 'close-profile-form' });
+							dispatch({
+								type: 'status-message',
+								message: `✓ ${result.message}`,
+							});
+							await refresh('profiles');
+						});
+					return;
+				}
+				case 'modal-move':
+					dispatch({ type: 'modal-move', delta: command.delta });
+					return;
+				case 'choose-profile-default': {
+					const modal = current.modal;
+					if (modal?.kind !== 'choose-profile') {
+						return;
+					}
+					const name = modal.names[modal.index];
+					const target = current.workspaces.find(
+						(w) => w.ref.rootPath === modal.workspacePath,
+					);
+					dispatch({ type: 'close-modal' });
+					if (name === undefined || target === undefined) {
+						return;
+					}
+					void environment.setDefaultProfile(name).then(async (result) => {
+						dispatch({
+							type: 'status-message',
+							message: `${result.ok ? '✓' : '✗'} ${result.message}`,
+						});
+						await refresh('profiles');
+					});
+					const resolution = resolveTuiDotfiles(
+						current,
+						modal.workspacePath,
+						name,
+					);
+					if (resolution.outcome !== 'resolved') {
+						return;
+					}
+					if (resolution.dotfiles?.needsConfirmation === true) {
+						modalOpenedAtRef.current = Date.now();
+						dispatch({
+							type: 'open-confirm-profile-use',
+							name,
+							operation: modal.operation,
+							workspacePath: modal.workspacePath,
+						});
+						return;
+					}
+					runMutation(modal.operation, target, resolution.dotfiles);
+					return;
+				}
+				case 'profile-use-skip': {
+					const modal = current.modal;
+					if (
+						modal?.kind !== 'confirm-profile-use' &&
+						modal?.kind !== 'choose-profile'
+					) {
+						return;
+					}
+					const target = current.workspaces.find(
+						(w) => w.ref.rootPath === modal.workspacePath,
+					);
+					dispatch({ type: 'close-modal' });
+					if (target !== undefined) {
+						runMutation(modal.operation, target, null);
+					}
+					return;
+				}
 			}
 		},
 		[
 			exit,
 			size,
+			environment,
 			runMutation,
+			startWorkspaceMutation,
 			runContainerMutation,
 			runImageRemoval,
 			runShell,
@@ -803,6 +1117,7 @@ export function App({
 				(current.section === 'containers' || current.section === 'images') &&
 				current.filters[current.section] !== '',
 			detailOpen: current.detailOpen,
+			profileFormOpen: current.profileForm !== null,
 		});
 		if (command !== null) {
 			execute(command);
@@ -911,6 +1226,51 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 			</Box>
 		);
 	}
+	if (modal?.kind === 'confirm-profile-delete') {
+		return (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ConfirmProfileDelete
+					name={modal.name}
+					isDefault={state.defaultProfile === modal.name}
+					assignedCount={
+						Object.values(state.workspaceProfiles).filter(
+							(assigned) => assigned === modal.name,
+						).length
+					}
+				/>
+			</Box>
+		);
+	}
+	if (modal?.kind === 'confirm-profile-use') {
+		const profile = state.profiles[modal.name];
+		return profile === undefined ? null : (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ConfirmProfileUse name={modal.name} profile={profile} />
+			</Box>
+		);
+	}
+	if (modal?.kind === 'choose-profile') {
+		return (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ChooseProfile names={modal.names} index={modal.index} />
+			</Box>
+		);
+	}
+	if (modal?.kind === 'assign-profile') {
+		return (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<AssignProfile
+					name={modal.name}
+					paths={modal.paths}
+					index={modal.index}
+					workspaceProfiles={state.workspaceProfiles}
+					workspaceName={(path) =>
+						state.workspaces.find((w) => w.ref.rootPath === path)?.name ?? path
+					}
+				/>
+			</Box>
+		);
+	}
 	if (modal?.kind === 'confirm-remove' || modal?.kind === 'confirm-rebuild') {
 		const target = state.workspaces.find(
 			(w) => w.ref.rootPath === modal.workspacePath,
@@ -939,16 +1299,7 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		if (state.section === 'images') {
 			return <ImagesContent state={state} size={size} />;
 		}
-		return (
-			<Pane focused grow>
-				<Box flexGrow={1} justifyContent="center" alignItems="center">
-					<Text dimColor>
-						{sectionTitle(state.section)} arrives in a later phase — Workspaces
-						is where Phase 1 lives. (h/l to go back)
-					</Text>
-				</Box>
-			</Pane>
-		);
+		return <ProfilesContent state={state} size={size} />;
 	}
 
 	const selected = selectedWorkspace(state);
@@ -959,6 +1310,11 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 			<WorkspaceDetail
 				workspace={selected}
 				dotfilesRepository={state.dotfilesRepository}
+				profileName={
+					selected === null
+						? null
+						: effectiveProfileName(state, selected.ref.rootPath)
+				}
 			/>
 		);
 
@@ -1038,6 +1394,73 @@ function ImagesContent({ state, size }: { state: TuiState; size: Size }) {
 					filterQuery={state.filters.images}
 					selectedId={state.selectedImageId}
 					markedIds={state.selectedImageIds}
+					focused={state.focusedPane === 'list'}
+					visibleRows={rows}
+				/>
+			</Pane>
+			<Pane focused={state.focusedPane === 'detail'} grow>
+				{detail}
+			</Pane>
+		</Box>
+	);
+}
+
+function ProfilesContent({ state, size }: { state: TuiState; size: Size }) {
+	const mode = layoutMode(size);
+	const rows = contentRows(size);
+	if (state.profilesProblem !== null) {
+		return (
+			<Pane focused grow>
+				<Box
+					flexGrow={1}
+					flexDirection="column"
+					justifyContent="center"
+					alignItems="center"
+				>
+					<Text color="red">! {state.profilesProblem.summary}</Text>
+					{state.profilesProblem.remedy !== undefined && (
+						<Text dimColor>{state.profilesProblem.remedy}</Text>
+					)}
+				</Box>
+			</Pane>
+		);
+	}
+	if (state.profileForm !== null) {
+		return (
+			<Pane focused grow>
+				<ProfileForm form={state.profileForm} />
+			</Pane>
+		);
+	}
+	const names = orderedProfileNames(state);
+	const detail = <ProfileDetail state={state} />;
+	if (mode === 'narrow') {
+		return (
+			<Pane focused grow>
+				{state.detailOpen ? (
+					detail
+				) : (
+					<ProfileList
+						names={names}
+						defaultProfile={state.defaultProfile}
+						selectedName={state.selectedProfileName}
+						focused
+						visibleRows={rows}
+					/>
+				)}
+			</Pane>
+		);
+	}
+	return (
+		<Box flexGrow={1} flexDirection="row">
+			<Pane
+				focused={state.focusedPane === 'list'}
+				width={resourceListPaneWidth(size)}
+			>
+				<ProfileList
+					names={names}
+					defaultProfile={state.defaultProfile}
+					selectedName={state.selectedProfileName}
 					focused={state.focusedPane === 'list'}
 					visibleRows={rows}
 				/>
@@ -1133,28 +1556,42 @@ function StatusBar({ state, size }: { state: TuiState; size: Size }) {
 					['Enter', 'apply'],
 					['Esc', 'cancel'],
 				]
-			: state.logView !== null
+			: state.profileForm !== null
 				? [
-						['j/k', 'scroll'],
-						['Esc', 'back'],
+						['Tab', 'field'],
+						['Enter', 'save'],
+						['Esc', 'cancel'],
 					]
-				: state.modal !== null
-					? [['Esc', 'close']]
-					: state.section === 'containers' || state.section === 'images'
-						? [
-								['j/k', 'select'],
-								['⏎', 'inspect'],
-								['/', 'filter'],
-								['?', 'help'],
-								['q', 'quit'],
-							]
-						: [
-								['h/l', 'tabs'],
-								['j/k', 'select'],
-								['⏎', 'action'],
-								['?', 'help'],
-								['q', 'quit'],
-							];
+				: state.logView !== null
+					? [
+							['j/k', 'scroll'],
+							['Esc', 'back'],
+						]
+					: state.modal !== null
+						? [['Esc', 'close']]
+						: state.section === 'containers' || state.section === 'images'
+							? [
+									['j/k', 'select'],
+									['⏎', 'inspect'],
+									['/', 'filter'],
+									['?', 'help'],
+									['q', 'quit'],
+								]
+							: state.section === 'profiles'
+								? [
+										['n/e', 'new/edit'],
+										['s', 'default'],
+										['a', 'assign'],
+										['?', 'help'],
+										['q', 'quit'],
+									]
+								: [
+										['h/l', 'tabs'],
+										['j/k', 'select'],
+										['⏎', 'action'],
+										['?', 'help'],
+										['q', 'quit'],
+									];
 	const hintsWidth = hints.reduce(
 		(n, [k, l]) => n + k.length + l.length + 4,
 		0,

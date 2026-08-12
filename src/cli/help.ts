@@ -14,6 +14,7 @@ TUI sections
   bring workspaces             Workspace lifecycle and logs
   bring containers             Dev Container resources and safe actions
   bring images                 Dev Container image usage and cleanup
+  bring profiles               Dotfiles profiles: create, edit, assign
 
 Targets
   .  this  <path>              Default target is the current directory.
@@ -51,6 +52,8 @@ Options
   --no-cache                   Rebuild without the Docker build cache
   --dotfiles <repo|none>       Apply a dotfiles repo during up/rebuild.
                                Remembered after one success; none skips once
+  --profile <name|none>        Use a named dotfiles profile for this run
+                               (manage profiles in the TUI: bring profiles)
 
 Examples
   bring up                     Start the current project

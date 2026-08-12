@@ -4,7 +4,21 @@ import type {
 	ImageUsage,
 } from '../../src/core/resources.js';
 import type { WorkspaceStatus } from '../../src/core/types.js';
-import type { TuiWorkspace } from '../../src/tui/state.js';
+import type { TuiProfilesData, TuiWorkspace } from '../../src/tui/state.js';
+
+/** Zero-profiles data — what a machine without a config file loads. */
+export function emptyProfilesData(
+	overrides: Partial<TuiProfilesData> = {},
+): TuiProfilesData {
+	return {
+		available: {},
+		defaultProfile: null,
+		workspaceProfiles: {},
+		confirmations: {},
+		problem: null,
+		...overrides,
+	};
+}
 
 /** A TUI workspace fixture — enough shape for reducer and frame tests. */
 export function makeWorkspace(

@@ -12,6 +12,7 @@ import {
 	type TuiWorkspace,
 } from '../../src/tui/state.js';
 import {
+	emptyProfilesData,
 	makeContainer,
 	makeImage,
 	makeWorkspace,
@@ -53,6 +54,7 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 				resources: { containers: [], images: [], refreshedAt: '' },
 				resourceProblem: null,
 				dotfilesRepository: null,
+				profiles: emptyProfilesData(),
 			}),
 		up: () => Promise.reject(new Error('not in this test')),
 		down: () => Promise.reject(new Error('not in this test')),
@@ -61,6 +63,10 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 		mutateContainer: () => Promise.reject(new Error('not in this test')),
 		removeImages: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
+		saveProfile: () => Promise.reject(new Error('not in this test')),
+		deleteProfile: () => Promise.reject(new Error('not in this test')),
+		setDefaultProfile: () => Promise.reject(new Error('not in this test')),
+		assignWorkspaceProfile: () => Promise.reject(new Error('not in this test')),
 		...overrides,
 	};
 }
@@ -111,7 +117,7 @@ describe('chrome', () => {
 		expect(frame).toContain('q quit');
 	});
 
-	it('renders a useful empty state in Containers and placeholders for later sections', () => {
+	it('renders useful empty states in Containers and Profiles', () => {
 		const frame = view(
 			stateFrom(
 				[{ type: 'move-section', delta: 1 }],
@@ -122,17 +128,12 @@ describe('chrome', () => {
 		expect(frame).toContain('positively identified');
 		const profiles = view(
 			stateFrom(
-				[{ type: 'move-section', delta: 1 }],
-				stateFrom(
-					[{ type: 'move-section', delta: 1 }],
-					stateFrom(
-						[{ type: 'move-section', delta: 1 }],
-						ready([makeWorkspace('a', 'running')]),
-					),
-				),
+				[{ type: 'move-section', delta: -1 }],
+				ready([makeWorkspace('a', 'running')]),
 			),
 		);
-		expect(profiles).toContain('arrives in a later phase');
+		expect(profiles).toContain('DOTFILE PROFILES');
+		expect(profiles).toContain('press n to create one');
 	});
 });
 
@@ -499,6 +500,7 @@ describe('full App loading flow', () => {
 					resources: { containers: [], images: [], refreshedAt: '' },
 					resourceProblem: null,
 					dotfilesRepository: null,
+					profiles: emptyProfilesData(),
 				}),
 		});
 		const instance = render(

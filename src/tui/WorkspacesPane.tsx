@@ -81,9 +81,12 @@ export function WorkspaceList({
 export function WorkspaceDetail({
 	workspace,
 	dotfilesRepository,
+	profileName,
 }: {
 	workspace: TuiWorkspace | null;
 	dotfilesRepository?: string | null;
+	/** Effective dotfiles profile (override > default > only), if any. */
+	profileName?: string | null;
 }) {
 	if (workspace === null) {
 		return <Text dimColor>Nothing selected.</Text>;
@@ -130,12 +133,18 @@ export function WorkspaceDetail({
 						{relative(workspace.ref.rootPath, workspace.ref.configPath)}
 					</Text>
 				</DetailRow>
-				{typeof dotfilesRepository === 'string' && (
-					<DetailRow label="Dotfiles">
-						<Text wrap="truncate-middle">
-							{dotfilesRepository} <Text dimColor>(user default)</Text>
-						</Text>
+				{typeof profileName === 'string' ? (
+					<DetailRow label="Profile">
+						<Text wrap="truncate">{profileName}</Text>
 					</DetailRow>
+				) : (
+					typeof dotfilesRepository === 'string' && (
+						<DetailRow label="Dotfiles">
+							<Text wrap="truncate-middle">
+								{dotfilesRepository} <Text dimColor>(user default)</Text>
+							</Text>
+						</DetailRow>
+					)
 				)}
 			</Box>
 			{workspace.status === 'failed' && workspace.problem !== undefined && (

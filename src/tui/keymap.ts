@@ -32,6 +32,10 @@ export interface KeyContext {
 		| 'confirm-rebuild'
 		| 'confirm-container-remove'
 		| 'confirm-image-remove'
+		| 'confirm-profile-delete'
+		| 'confirm-profile-use'
+		| 'choose-profile'
+		| 'assign-profile'
 		| null;
 	logViewOpen: boolean;
 	operationRunning: boolean;
@@ -40,6 +44,8 @@ export interface KeyContext {
 	filtering: boolean;
 	filterActive: boolean;
 	detailOpen: boolean;
+	/** The Profiles create/edit form owns typed input while open (P3-07). */
+	profileFormOpen: boolean;
 }
 
 export type TuiCommand =
@@ -70,7 +76,21 @@ export type TuiCommand =
 	| { kind: 'confirm-modal' }
 	| { kind: 'scroll-logs'; delta: number }
 	| { kind: 'dismiss-operation' }
-	| { kind: 'retry-doctor' };
+	| { kind: 'retry-doctor' }
+	| { kind: 'profile-new' }
+	| { kind: 'profile-edit' }
+	| { kind: 'profile-default' }
+	| { kind: 'profile-assign' }
+	| { kind: 'profile-form-input'; text: string }
+	| { kind: 'profile-form-backspace' }
+	| { kind: 'profile-form-focus'; delta: 1 | -1 }
+	| { kind: 'profile-form-submit' }
+	| { kind: 'profile-form-cancel' }
+	| { kind: 'modal-move'; delta: 1 | -1 }
+	/** In choose-profile: pick the highlighted profile AND make it default. */
+	| { kind: 'choose-profile-default' }
+	/** In profile-use/choose modals: run the operation without dotfiles. */
+	| { kind: 'profile-use-skip' };
 
 export function keyToCommand(
 	input: string,
@@ -110,12 +130,63 @@ export function keyToCommand(
 		context.modal === 'confirm-remove' ||
 		context.modal === 'confirm-rebuild' ||
 		context.modal === 'confirm-container-remove' ||
-		context.modal === 'confirm-image-remove'
+		context.modal === 'confirm-image-remove' ||
+		context.modal === 'confirm-profile-delete'
 	) {
 		if (key.return === true) {
 			return { kind: 'confirm-modal' };
 		}
 		if (key.escape === true || input === 'q' || input === 'n') {
+			return { kind: 'close-modal' };
+		}
+		return null;
+	}
+	// First-use confirmation (§15.4): Enter applies the profile, n runs the
+	// operation without dotfiles, Esc cancels the operation entirely.
+	if (context.modal === 'confirm-profile-use') {
+		if (key.return === true) {
+			return { kind: 'confirm-modal' };
+		}
+		if (input === 'n') {
+			return { kind: 'profile-use-skip' };
+		}
+		if (key.escape === true || input === 'q') {
+			return { kind: 'close-modal' };
+		}
+		return null;
+	}
+	if (context.modal === 'choose-profile') {
+		if (input === 'j' || key.downArrow === true) {
+			return { kind: 'modal-move', delta: 1 };
+		}
+		if (input === 'k' || key.upArrow === true) {
+			return { kind: 'modal-move', delta: -1 };
+		}
+		if (key.return === true) {
+			return { kind: 'confirm-modal' };
+		}
+		if (input === 's') {
+			return { kind: 'choose-profile-default' };
+		}
+		if (input === 'n') {
+			return { kind: 'profile-use-skip' };
+		}
+		if (key.escape === true || input === 'q') {
+			return { kind: 'close-modal' };
+		}
+		return null;
+	}
+	if (context.modal === 'assign-profile') {
+		if (input === 'j' || key.downArrow === true) {
+			return { kind: 'modal-move', delta: 1 };
+		}
+		if (input === 'k' || key.upArrow === true) {
+			return { kind: 'modal-move', delta: -1 };
+		}
+		if (key.return === true) {
+			return { kind: 'confirm-modal' };
+		}
+		if (key.escape === true || input === 'q') {
 			return { kind: 'close-modal' };
 		}
 		return null;
@@ -163,6 +234,32 @@ export function keyToCommand(
 			return { kind: 'open-help' };
 		}
 		return null;
+	}
+
+	// The profile form owns the keyboard like the filter does: typed text is
+	// content, never a command (P3-07).
+	if (context.profileFormOpen) {
+		if (key.return === true) {
+			return { kind: 'profile-form-submit' };
+		}
+		if (key.escape === true) {
+			return { kind: 'profile-form-cancel' };
+		}
+		if (key.tab === true) {
+			return { kind: 'profile-form-focus', delta: key.shift === true ? -1 : 1 };
+		}
+		if (key.downArrow === true) {
+			return { kind: 'profile-form-focus', delta: 1 };
+		}
+		if (key.upArrow === true) {
+			return { kind: 'profile-form-focus', delta: -1 };
+		}
+		if (key.backspace === true) {
+			return { kind: 'profile-form-backspace' };
+		}
+		return input !== '' && key.ctrl !== true
+			? { kind: 'profile-form-input', text: input }
+			: null;
 	}
 
 	if (context.filtering) {
@@ -247,13 +344,22 @@ export function keyToCommand(
 		case 'r':
 			return { kind: 'rebuild-or-refresh' };
 		case 'e':
+			if (section === 'profiles') {
+				return { kind: 'profile-edit' };
+			}
 			return section === 'workspaces' || section === 'containers'
 				? { kind: 'open-shell' }
 				: null;
 		case 'L':
 			return section === 'workspaces' ? { kind: 'open-logs' } : null;
 		case 'x':
-			return section === 'profiles' ? null : { kind: 'request-remove' };
+			return { kind: 'request-remove' };
+		case 'n':
+			return section === 'profiles' ? { kind: 'profile-new' } : null;
+		case 's':
+			return section === 'profiles' ? { kind: 'profile-default' } : null;
+		case 'a':
+			return section === 'profiles' ? { kind: 'profile-assign' } : null;
 		case ' ':
 			return section === 'images' ? { kind: 'toggle-selection' } : null;
 		case 'p':

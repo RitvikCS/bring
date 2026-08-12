@@ -18,6 +18,7 @@ const READY: KeyContext = {
 	filtering: false,
 	filterActive: false,
 	detailOpen: false,
+	profileFormOpen: false,
 };
 
 const CONTAINERS: KeyContext = { ...READY, section: 'containers' };
@@ -193,14 +194,36 @@ describe('keymap: action keys are scoped to their section', () => {
 		expect(keyToCommand('/', key(), IMAGES)).toEqual({ kind: 'open-filter' });
 	});
 
-	it('leaves the placeholder Profiles section with no action keys', () => {
-		for (const input of ['u', 'd', 'e', 'L', 'x', ' ', 'p', '/']) {
+	it('scopes Profiles action keys and keeps foreign ones dead', () => {
+		// Workspace/resource keys must never act on the hidden panes.
+		for (const input of ['u', 'd', 'L', ' ', 'p', '/']) {
 			expect(keyToCommand(input, key(), PROFILES)).toBeNull();
 		}
+		expect(keyToCommand('n', key(), PROFILES)).toEqual({
+			kind: 'profile-new',
+		});
+		expect(keyToCommand('e', key(), PROFILES)).toEqual({
+			kind: 'profile-edit',
+		});
+		expect(keyToCommand('s', key(), PROFILES)).toEqual({
+			kind: 'profile-default',
+		});
+		expect(keyToCommand('a', key(), PROFILES)).toEqual({
+			kind: 'profile-assign',
+		});
+		expect(keyToCommand('x', key(), PROFILES)).toEqual({
+			kind: 'request-remove',
+		});
 		expect(keyToCommand('r', key(), PROFILES)).toEqual({
 			kind: 'rebuild-or-refresh',
 		});
 		expect(keyToCommand('q', key(), PROFILES)).toEqual({ kind: 'quit' });
+		// And the profile keys are dead everywhere else.
+		for (const context of [READY, CONTAINERS, IMAGES]) {
+			for (const input of ['n', 's', 'a']) {
+				expect(keyToCommand(input, key(), context)).toBeNull();
+			}
+		}
 	});
 });
 
