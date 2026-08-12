@@ -27,6 +27,8 @@ describe('parseArgv', () => {
 		[['doctor', '--help'], { kind: 'help' }],
 		[['ls'], { kind: 'ls', json: false }],
 		[['ls', '--json'], { kind: 'ls', json: true }],
+		[['forget', 'api'], { kind: 'forget', target: 'api' }],
+		[['forget', '../api'], { kind: 'forget', target: '../api' }],
 		[['workspaces'], { kind: 'section', section: 'workspaces' }],
 		[['containers'], { kind: 'section', section: 'containers' }],
 		[['images'], { kind: 'section', section: 'images' }],

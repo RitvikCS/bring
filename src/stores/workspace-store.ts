@@ -78,6 +78,25 @@ export function rememberWorkspace(
 }
 
 /**
+ * Drop a workspace from the registry (`bring forget`). Registry-only:
+ * containers, images, and source files are untouched. Returns the removed
+ * entry, or null when the path was not remembered.
+ */
+export function forgetWorkspace(
+	stateFile: string,
+	rootPath: string,
+): StoredWorkspace | null {
+	const state = loadState(stateFile);
+	const entry = state.workspaces.find((w) => w.path === rootPath) ?? null;
+	if (entry === null) {
+		return null;
+	}
+	state.workspaces = state.workspaces.filter((w) => w.path !== rootPath);
+	writeStateAtomically(stateFile, state);
+	return entry;
+}
+
+/**
  * Remember the user's dotfiles repository (amendment A6). Set on every
  * successful `up --dotfiles <url>`; applied by default to later ups.
  */

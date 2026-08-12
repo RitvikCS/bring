@@ -38,6 +38,8 @@ Global commands
   doctor                       Check Node, the devcontainer CLI, and Docker;
                                explain what is missing
   ls                           List known workspaces with live status
+  forget <workspace>           Drop a workspace from Bring's memory
+                               (containers, images, and files stay)
 
 Options
   --help, -h                   Show this help

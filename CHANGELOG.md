@@ -6,6 +6,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `bring forget <workspace>`: drop a remembered workspace from Bring's
+  registry (by name from `bring ls` or by path — the directory may already
+  be deleted). Containers, images, and source files are untouched; the
+  workspace's captured operation logs are cleared with it. Previously the
+  only way out was hand-editing state.json.
+
 ## [0.2.3] - 2026-07-19
 
 ### Added

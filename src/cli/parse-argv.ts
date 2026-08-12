@@ -30,6 +30,7 @@ export type CliRoute =
 	| { kind: 'tui' }
 	| { kind: 'doctor'; json: boolean }
 	| { kind: 'ls'; json: boolean }
+	| { kind: 'forget'; target: string }
 	| { kind: 'section'; section: string }
 	| {
 			kind: 'direct';
@@ -161,6 +162,14 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		return positionals.length === 1
 			? { kind: 'ls', json: options.json }
 			: usage(`\`bring ls\` takes no arguments (got \`${positionals[1]}\`).`);
+	}
+	if (first === 'forget') {
+		if (positionals.length !== 2) {
+			return usage(
+				'`bring forget` needs exactly one workspace (a name from `bring ls` or a path).',
+			);
+		}
+		return { kind: 'forget', target: positionals[1] as string };
 	}
 	if (SECTIONS.has(first)) {
 		return positionals.length === 1
