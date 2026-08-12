@@ -104,7 +104,8 @@ Drops a workspace from Bring's registry — by name from `bring ls` or by
 path, even when the directory no longer exists. Containers, images, and
 source files are untouched; the workspace's captured operation logs are
 cleared with it. An ambiguous name lists the matching paths and asks for
-the full one.
+the full one. In the TUI, `f` on a selected workspace does the same thing
+behind a confirmation.
 
 ## The full-screen interface
 
@@ -121,6 +122,7 @@ Bare `bring` opens the TUI; `bring workspaces`, `bring containers`,
 | `e` | shell into the selected workspace or container |
 | `L` | view the captured operation log (`j`/`k`/`g`/`G` scroll) |
 | `x` | request removal — always lands in a confirmation first |
+| `f` | forget the selected workspace (registry only, confirms first) |
 | `/` | filter the Containers/Images list (smart-case), `Esc` clears |
 | `Space`, `p` | Images: mark an image / review prunable dangling images |
 | `n` / `e` / `s` / `a` | Profiles: new / edit / toggle default / assign to a workspace |

@@ -194,6 +194,15 @@ describe('keymap: action keys are scoped to their section', () => {
 		expect(keyToCommand('/', key(), IMAGES)).toEqual({ kind: 'open-filter' });
 	});
 
+	it('scopes forget to the Workspaces section', () => {
+		expect(keyToCommand('f', key(), READY)).toEqual({
+			kind: 'request-forget',
+		});
+		for (const context of [CONTAINERS, IMAGES, PROFILES]) {
+			expect(keyToCommand('f', key(), context)).toBeNull();
+		}
+	});
+
 	it('scopes Profiles action keys and keeps foreign ones dead', () => {
 		// Workspace/resource keys must never act on the hidden panes.
 		for (const input of ['u', 'd', 'L', ' ', 'p', '/']) {

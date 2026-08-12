@@ -32,6 +32,7 @@ export interface KeyContext {
 		| 'confirm-rebuild'
 		| 'confirm-container-remove'
 		| 'confirm-image-remove'
+		| 'confirm-forget'
 		| 'confirm-profile-delete'
 		| 'confirm-profile-use'
 		| 'choose-profile'
@@ -63,6 +64,7 @@ export type TuiCommand =
 	| { kind: 'open-shell' }
 	| { kind: 'open-logs' }
 	| { kind: 'request-remove' }
+	| { kind: 'request-forget' }
 	| { kind: 'toggle-selection' }
 	| { kind: 'prune-dangling' }
 	| { kind: 'open-filter' }
@@ -131,6 +133,7 @@ export function keyToCommand(
 		context.modal === 'confirm-rebuild' ||
 		context.modal === 'confirm-container-remove' ||
 		context.modal === 'confirm-image-remove' ||
+		context.modal === 'confirm-forget' ||
 		context.modal === 'confirm-profile-delete'
 	) {
 		if (key.return === true) {
@@ -354,6 +357,8 @@ export function keyToCommand(
 			return section === 'workspaces' ? { kind: 'open-logs' } : null;
 		case 'x':
 			return { kind: 'request-remove' };
+		case 'f':
+			return section === 'workspaces' ? { kind: 'request-forget' } : null;
 		case 'n':
 			return section === 'profiles' ? { kind: 'profile-new' } : null;
 		case 's':

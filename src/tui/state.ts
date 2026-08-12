@@ -69,6 +69,8 @@ export type Modal =
 	| { kind: 'confirm-rebuild'; workspacePath: string }
 	| { kind: 'confirm-container-remove'; containerId: string }
 	| { kind: 'confirm-image-remove'; imageIds: string[] }
+	// Registry-only removal (`bring forget` from the Workspaces pane).
+	| { kind: 'confirm-forget'; workspacePath: string }
 	| { kind: 'confirm-profile-delete'; name: string }
 	// §15.4 first-use confirmation, holding the operation it interrupts.
 	| {
@@ -244,6 +246,7 @@ export type TuiAction =
 	| { type: 'open-confirm-remove' }
 	| { type: 'open-confirm-rebuild' }
 	| { type: 'open-confirm-container-remove' }
+	| { type: 'open-confirm-forget' }
 	| { type: 'toggle-image-selection' }
 	| { type: 'select-prunable-images' }
 	| { type: 'open-confirm-image-remove' }
@@ -711,6 +714,16 @@ export function reduce(state: TuiState, action: TuiAction): TuiState {
 					kind: 'confirm-container-remove',
 					containerId: selected.id,
 				},
+			};
+		}
+		case 'open-confirm-forget': {
+			const selected = selectedWorkspace(state);
+			if (selected === null) {
+				return state;
+			}
+			return {
+				...state,
+				modal: { kind: 'confirm-forget', workspacePath: selected.ref.rootPath },
 			};
 		}
 		case 'toggle-image-selection': {

@@ -13,6 +13,7 @@ import {
 } from '../application/container-actions.js';
 import type { OperationContext } from '../application/context.js';
 import { type DoctorReport, runDoctor } from '../application/doctor.js';
+import { runForget } from '../application/forget-workspace.js';
 import {
 	type ImageRemovalResult,
 	removeImageResources,
@@ -84,6 +85,10 @@ export interface TuiEnvironment {
 		images: readonly DevContainerImageResource[],
 	): Promise<ImageRemovalResult>;
 	readLog(workspace: WorkspaceRef): string | null;
+	/** Registry-only removal (`bring forget`): containers and files stay. */
+	forgetWorkspace(
+		workspace: WorkspaceRef,
+	): Promise<{ ok: boolean; message: string }>;
 	/** Profile store mutations (P3-06…P3-09); each persists atomically. */
 	saveProfile(
 		name: string,
@@ -240,6 +245,21 @@ export function realEnvironment(
 				images,
 			),
 		readLog: (workspace) => readLatestLog(stateDir, workspace.identity),
+		forgetWorkspace: async (workspace) => {
+			const result = runForget(
+				{ stateFile, stateDir, cwd },
+				workspace.rootPath,
+			);
+			return result.outcome === 'forgotten'
+				? {
+						ok: true,
+						message: `Forgot ${result.name} — containers and files stay.`,
+					}
+				: {
+						ok: false,
+						message: `${basename(workspace.rootPath)} is not in Bring's registry.`,
+					};
+		},
 		saveProfile: async (name, profile, originalName) =>
 			upsertProfile(configFile, stateFile, name, profile, originalName),
 		deleteProfile: async (name) => deleteProfile(configFile, stateFile, name),

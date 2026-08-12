@@ -31,8 +31,9 @@ follow [Semantic Versioning](https://semver.org/).
 - `bring forget <workspace>`: drop a remembered workspace from Bring's
   registry (by name from `bring ls` or by path — the directory may already
   be deleted). Containers, images, and source files are untouched; the
-  workspace's captured operation logs are cleared with it. Previously the
-  only way out was hand-editing state.json.
+  workspace's captured operation logs are cleared with it. In the TUI,
+  `f` on a selected workspace opens the same registry-only removal behind
+  a confirmation. Previously the only way out was hand-editing state.json.
 
 ### Fixed
 

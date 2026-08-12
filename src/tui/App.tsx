@@ -34,6 +34,7 @@ import {
 	AssignProfile,
 	ChooseProfile,
 	ConfirmContainerRemove,
+	ConfirmForget,
 	ConfirmImageRemove,
 	ConfirmProfileDelete,
 	ConfirmProfileUse,
@@ -749,6 +750,23 @@ export function App({
 					modalOpenedAtRef.current = Date.now();
 					dispatch({ type: 'open-confirm-remove' });
 					return;
+				case 'request-forget':
+					if (current.section !== 'workspaces' || selected === null) {
+						return;
+					}
+					if (selected.unregistered === true) {
+						dispatch({
+							type: 'status-message',
+							message: `${selected.name} is not remembered yet — nothing to forget.`,
+						});
+						return;
+					}
+					if (busy(selected)) {
+						return;
+					}
+					modalOpenedAtRef.current = Date.now();
+					dispatch({ type: 'open-confirm-forget' });
+					return;
 				case 'confirm-modal': {
 					const modal = current.modal;
 					if (modal === null || modal.kind === 'help') {
@@ -776,6 +794,25 @@ export function App({
 						);
 						dispatch({ type: 'close-modal' });
 						runImageRemoval(targets);
+						return;
+					}
+					if (modal.kind === 'confirm-forget') {
+						const target = current.workspaces.find(
+							(w) => w.ref.rootPath === modal.workspacePath,
+						);
+						dispatch({ type: 'close-modal' });
+						if (target === undefined) {
+							return;
+						}
+						void environment
+							.forgetWorkspace(target.ref)
+							.then(async (result) => {
+								dispatch({
+									type: 'status-message',
+									message: `${result.ok ? '✓' : '✗'} ${result.message}`,
+								});
+								await refresh();
+							});
 						return;
 					}
 					if (modal.kind === 'confirm-profile-delete') {
@@ -1223,6 +1260,16 @@ function Content({ state, size }: { state: TuiState; size: Size }) {
 		return targets.length === 0 ? null : (
 			<Box flexGrow={1} justifyContent="center" alignItems="center">
 				<ConfirmImageRemove images={targets} />
+			</Box>
+		);
+	}
+	if (modal?.kind === 'confirm-forget') {
+		const target = state.workspaces.find(
+			(w) => w.ref.rootPath === modal.workspacePath,
+		);
+		return target === undefined ? null : (
+			<Box flexGrow={1} justifyContent="center" alignItems="center">
+				<ConfirmForget workspace={target} />
 			</Box>
 		);
 	}

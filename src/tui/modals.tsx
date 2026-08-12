@@ -19,6 +19,7 @@ const HELP_ROWS: readonly [string, string][] = [
 	['u · d · e', 'workspace up · down/stop · shell'],
 	['r · L', 'rebuild/refresh · latest log'],
 	['x · p', 'confirmed removal · prune dangling images'],
+	['f', 'forget a workspace (registry only — nothing deleted)'],
 	['n/e · s · a', 'profile new/edit · default · assign'],
 	['/', 'filter Containers or Images'],
 	['Esc · q · ?', 'back/close · quit · help'],
@@ -162,6 +163,38 @@ export function ConfirmRebuild({ workspace }: { workspace: TuiWorkspace }) {
 			</Box>
 			<Box marginTop={1}>
 				<Text dimColor>[Enter] Rebuild [Esc] Cancel</Text>
+			</Box>
+		</Box>
+	);
+}
+
+/** Registry-only: the counterpart of `bring forget` for the TUI. */
+export function ConfirmForget({ workspace }: { workspace: TuiWorkspace }) {
+	const count = workspace.containerIds.length;
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="yellow"
+			paddingX={2}
+			paddingY={1}
+			alignSelf="center"
+		>
+			<Text bold>Forget {workspace.name}?</Text>
+			<Box marginTop={1} flexDirection="column">
+				<Text>Bring stops tracking this workspace — registry entry and</Text>
+				<Text>captured logs are removed. Nothing else changes:</Text>
+				<Text>
+					{count === 0
+						? 'no containers exist, and source files are never touched.'
+						: `${count} container${count === 1 ? '' : 's'} keep${count === 1 ? 's' : ''} running; source files are never touched.`}
+				</Text>
+				<Text dimColor>
+					A later `bring up` in that directory remembers it again.
+				</Text>
+			</Box>
+			<Box marginTop={1}>
+				<Text dimColor>[Enter] Forget [Esc] Cancel</Text>
 			</Box>
 		</Box>
 	);

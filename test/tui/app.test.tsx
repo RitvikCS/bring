@@ -63,6 +63,7 @@ function fakeEnvironment(overrides: Partial<TuiEnvironment>): TuiEnvironment {
 		mutateContainer: () => Promise.reject(new Error('not in this test')),
 		removeImages: () => Promise.reject(new Error('not in this test')),
 		readLog: () => null,
+		forgetWorkspace: () => Promise.reject(new Error('not in this test')),
 		saveProfile: () => Promise.reject(new Error('not in this test')),
 		deleteProfile: () => Promise.reject(new Error('not in this test')),
 		setDefaultProfile: () => Promise.reject(new Error('not in this test')),
@@ -115,6 +116,19 @@ describe('chrome', () => {
 		expect(frame).toContain('1.0.0');
 		expect(frame).toContain('? help');
 		expect(frame).toContain('q quit');
+	});
+
+	it('renders the forget confirmation with registry-only wording', () => {
+		const frame = view(
+			stateFrom(
+				[{ type: 'open-confirm-forget' }],
+				ready([makeWorkspace('old-project', 'running')]),
+			),
+		);
+		expect(frame).toContain('Forget old-project?');
+		expect(frame).toContain('registry entry');
+		expect(frame).toContain('1 container keeps running');
+		expect(frame).toContain('[Enter] Forget');
 	});
 
 	it('renders useful empty states in Containers and Profiles', () => {

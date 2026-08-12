@@ -224,7 +224,12 @@ function MissingConfigDetail({ workspace }: { workspace: TuiWorkspace }) {
 				</Text>
 			</Box>
 			<Box marginTop={1}>
-				<KeyHints hints={[['r', 'Check again']]} />
+				<KeyHints
+					hints={[
+						['r', 'Check again'],
+						['f', 'Forget'],
+					]}
+				/>
 			</Box>
 		</Box>
 	);
@@ -271,6 +276,7 @@ function actionHints(status: WorkspaceStatus): [string, string][] {
 				['r', 'Rebuild'],
 				['L', 'Logs'],
 				['x', 'Remove'],
+				['f', 'Forget'],
 			];
 		case 'failed':
 			return [
@@ -280,7 +286,10 @@ function actionHints(status: WorkspaceStatus): [string, string][] {
 				['x', 'Remove'],
 			];
 		case 'not-created':
-			return [['u', 'Up']];
+			return [
+				['u', 'Up'],
+				['f', 'Forget'],
+			];
 		default:
 			return [];
 	}
