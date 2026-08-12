@@ -75,7 +75,7 @@ export function ProfileDetail({ state }: { state: TuiState }) {
 	const confirmed = state.profileConfirmations[name] !== undefined;
 	return (
 		<Box flexDirection="column">
-			<Text bold>
+			<Text bold wrap="truncate">
 				{name}
 				{name === state.defaultProfile && <Text dimColor> (default)</Text>}
 			</Text>

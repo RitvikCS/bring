@@ -188,6 +188,32 @@ describe('Images section (§12.6)', () => {
 		]);
 	}
 
+	it('truncates a long image name in the detail title instead of wrapping', () => {
+		// Regression: a wrapped title in the fixed-height detail pane painted
+		// over the rows below it (a VHS frame showed "elastic_lewinainers").
+		const longName = `registry.example.com/${'very-long-image-path/'.repeat(5)}app`;
+		const state = (workspaceImages: string) =>
+			stateFrom([
+				{
+					type: 'loaded',
+					workspaces: [],
+					resources: {
+						containers: [],
+						images: [makeImage(workspaceImages, 'base')],
+						refreshedAt: '',
+					},
+				},
+				{ type: 'set-section', section: 'images' },
+			]);
+		const longFrame = view(state(longName));
+		const shortFrame = view(state('tiny'));
+		// Truncation keeps the frame the same height as with a short name —
+		// nothing gets pushed into (or painted over) the rows below.
+		expect(longFrame.split('\n').length).toBe(shortFrame.split('\n').length);
+		expect(longFrame).toContain('…');
+		expect(longFrame).toContain('Size');
+	});
+
 	it('shows size, usage, impact, and selection state in wide mode', () => {
 		const frame = view(imagesState());
 		expect(frame).toContain('IMAGES 1/2 · 0 selected');

@@ -94,7 +94,12 @@ export function ImageDetail({
 	const created = relativeTime(image.createdAt, Date.now());
 	return (
 		<Box flexDirection="column">
-			<Text bold>{image.displayName}</Text>
+			{/* A wrapped title in this fixed-height pane paints over the rows
+			    below it (seen in a VHS frame as "elastic_lewinainers") — every
+			    detail title must truncate, never wrap. */}
+			<Text bold wrap="truncate-middle">
+				{image.displayName}
+			</Text>
 			<Text dimColor wrap="truncate-middle">
 				{image.id}
 			</Text>

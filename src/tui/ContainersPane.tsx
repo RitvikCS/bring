@@ -89,7 +89,11 @@ export function ContainerDetail({
 	const created = relativeTime(container.createdAt, Date.now());
 	return (
 		<Box flexDirection="column">
-			<Text bold>{container.name}</Text>
+			{/* Detail titles truncate, never wrap — a wrapped line paints over
+			    the rows below in this fixed-height pane. */}
+			<Text bold wrap="truncate">
+				{container.name}
+			</Text>
 			<Text dimColor wrap="truncate-middle">
 				{container.id}
 			</Text>

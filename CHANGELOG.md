@@ -32,6 +32,14 @@ follow [Semantic Versioning](https://semver.org/).
   workspace's captured operation logs are cleared with it. Previously the
   only way out was hand-editing state.json.
 
+### Fixed
+
+- Long names no longer corrupt the detail panes: a long image name could
+  wrap inside the fixed-height Images detail and paint over the rows below
+  it (seen in a demo frame as "elastic_lewinainers"). Every detail-pane
+  title now truncates instead of wrapping — Images, Containers, Workspaces,
+  and Profiles.
+
 ## [0.2.3] - 2026-07-19
 
 ### Added

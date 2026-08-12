@@ -96,7 +96,11 @@ export function WorkspaceDetail({
 	}
 	return (
 		<Box flexDirection="column">
-			<Text bold>{workspace.name}</Text>
+			{/* Detail titles truncate, never wrap — a wrapped line paints over
+			    the rows below in this fixed-height pane. */}
+			<Text bold wrap="truncate">
+				{workspace.name}
+			</Text>
 			<Text dimColor wrap="truncate-middle">
 				{workspace.ref.rootPath}
 			</Text>
@@ -200,8 +204,12 @@ export function WorkspaceDetail({
 function MissingConfigDetail({ workspace }: { workspace: TuiWorkspace }) {
 	return (
 		<Box flexDirection="column">
-			<Text bold>{workspace.name}</Text>
-			<Text dimColor>{workspace.ref.rootPath}</Text>
+			<Text bold wrap="truncate">
+				{workspace.name}
+			</Text>
+			<Text dimColor wrap="truncate-middle">
+				{workspace.ref.rootPath}
+			</Text>
 			<Box marginTop={1}>
 				<Text color="red">! Configuration missing</Text>
 			</Box>
