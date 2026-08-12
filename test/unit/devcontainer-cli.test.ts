@@ -96,12 +96,16 @@ describe('detectUpFlags', () => {
 			`echo "Options:"
 echo "  --remove-existing-container  Remove the existing container"
 echo "  --build-no-cache             Build without cache"
-echo "  --dotfiles-repository        URL of a dotfiles Git repository"`,
+echo "  --dotfiles-repository        URL of a dotfiles Git repository"
+echo "  --dotfiles-install-command   Command to run after cloning"
+echo "  --dotfiles-target-path       Clone location in the container"`,
 		);
 		expect(await detectUpFlags(bin)).toEqual({
 			replace: true,
 			noCache: true,
 			dotfiles: true,
+			dotfilesInstall: true,
+			dotfilesTarget: true,
 		});
 	});
 
@@ -111,6 +115,8 @@ echo "  --dotfiles-repository        URL of a dotfiles Git repository"`,
 			replace: false,
 			noCache: false,
 			dotfiles: false,
+			dotfilesInstall: false,
+			dotfilesTarget: false,
 		});
 	});
 });

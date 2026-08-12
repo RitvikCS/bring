@@ -20,6 +20,8 @@ export interface DirectOptions {
 	config?: string;
 	/** Dotfiles repo URL, or the literal `none` to skip once (A6). */
 	dotfiles?: string;
+	/** Dotfiles profile name, or the literal `none` to skip once (P3-10). */
+	profile?: string;
 	/** Tokens after `--`, only meaningful for shell. */
 	shellCommand?: string[];
 }
@@ -120,6 +122,19 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				i++;
 				break;
 			}
+			case '--profile': {
+				const value = head[i + 1];
+				if (value === undefined || value.startsWith('-')) {
+					return {
+						kind: 'usage-error',
+						message:
+							'--profile needs a profile name (or `none` to skip once), e.g. --profile personal',
+					};
+				}
+				options.profile = value;
+				i++;
+				break;
+			}
 			case '--config': {
 				const value = head[i + 1];
 				if (value === undefined || value.startsWith('-')) {
@@ -217,6 +232,18 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		action !== 'rebuild'
 	) {
 		return usage('--dotfiles only applies to up and rebuild.');
+	}
+	if (
+		options.profile !== undefined &&
+		action !== 'up' &&
+		action !== 'rebuild'
+	) {
+		return usage('--profile only applies to up and rebuild.');
+	}
+	if (options.profile !== undefined && options.dotfiles !== undefined) {
+		return usage(
+			'--profile and --dotfiles conflict — pick one way to choose dotfiles for this run.',
+		);
 	}
 
 	return { kind: 'direct', target, action, options };

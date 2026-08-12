@@ -13,6 +13,8 @@ export interface UpFlags {
 	buildNoCache?: boolean;
 	config?: string;
 	dotfilesRepository?: string;
+	dotfilesInstallCommand?: string;
+	dotfilesTargetPath?: string;
 }
 
 export interface UpSuccess {
@@ -34,6 +36,12 @@ export function upArgv(workspaceRoot: string, flags: UpFlags = {}): string[] {
 	}
 	if (flags.dotfilesRepository !== undefined) {
 		argv.push('--dotfiles-repository', flags.dotfilesRepository);
+	}
+	if (flags.dotfilesInstallCommand !== undefined) {
+		argv.push('--dotfiles-install-command', flags.dotfilesInstallCommand);
+	}
+	if (flags.dotfilesTargetPath !== undefined) {
+		argv.push('--dotfiles-target-path', flags.dotfilesTargetPath);
 	}
 	return argv;
 }
@@ -141,6 +149,16 @@ export const REBUILD_FLAGS = {
 	noCache: '--build-no-cache',
 } as const;
 export const DOTFILES_FLAG = '--dotfiles-repository';
+export const DOTFILES_INSTALL_FLAG = '--dotfiles-install-command';
+export const DOTFILES_TARGET_FLAG = '--dotfiles-target-path';
+
+export interface UpCapabilities {
+	replace: boolean;
+	noCache: boolean;
+	dotfiles: boolean;
+	dotfilesInstall: boolean;
+	dotfilesTarget: boolean;
+}
 
 /**
  * Check `devcontainer up --help` for optional flags. Bring refuses to
@@ -150,7 +168,7 @@ export const DOTFILES_FLAG = '--dotfiles-repository';
 export async function detectUpFlags(
 	executable: string,
 	options: RunOptions = {},
-): Promise<{ replace: boolean; noCache: boolean; dotfiles: boolean } | null> {
+): Promise<UpCapabilities | null> {
 	const probe = await runCommand(executable, ['up', '--help'], options);
 	if (probe.outcome !== 'ran') {
 		return null;
@@ -160,5 +178,7 @@ export async function detectUpFlags(
 		replace: text.includes(REBUILD_FLAGS.replace),
 		noCache: text.includes(REBUILD_FLAGS.noCache),
 		dotfiles: text.includes(DOTFILES_FLAG),
+		dotfilesInstall: text.includes(DOTFILES_INSTALL_FLAG),
+		dotfilesTarget: text.includes(DOTFILES_TARGET_FLAG),
 	};
 }

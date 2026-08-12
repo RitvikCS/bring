@@ -14,3 +14,17 @@ export function bringStateDir(env: NodeJS.ProcessEnv): string {
 	const home = env.HOME ?? homedir();
 	return join(home, '.local', 'state', 'bring');
 }
+
+/**
+ * Where Bring keeps user configuration (spec §15.1: XDG config dir with the
+ * standard fallback). Configuration is declarative user intent (profiles);
+ * state.json remains Bring's own memory — the two never share a file.
+ */
+export function bringConfigDir(env: NodeJS.ProcessEnv): string {
+	const xdgConfig = env.XDG_CONFIG_HOME;
+	if (xdgConfig !== undefined && xdgConfig.length > 0) {
+		return join(xdgConfig, 'bring');
+	}
+	const home = env.HOME ?? homedir();
+	return join(home, '.config', 'bring');
+}

@@ -13,6 +13,13 @@ export interface BringState {
 	workspaces: StoredWorkspace[];
 	/** User-wide default passed as --dotfiles-repository (amendment A6). */
 	dotfilesRepository?: string;
+	/**
+	 * Profile first-use confirmations (spec §15.4): profile name → the
+	 * fingerprint of what the user was shown and accepted ON THIS MACHINE.
+	 * Machine memory, not intent — which is why it lives here and not in the
+	 * user-authored profile config.
+	 */
+	profileConfirmations?: Record<string, string>;
 }
 
 const EMPTY_STATE: BringState = { schemaVersion: 1, workspaces: [] };
@@ -106,6 +113,25 @@ export function rememberDotfilesRepository(
 ): BringState {
 	const state = loadState(stateFile);
 	state.dotfilesRepository = repository;
+	writeStateAtomically(stateFile, state);
+	return state;
+}
+
+/**
+ * Record that the user saw and accepted a profile's repository and install
+ * command (spec §15.4), so first-use confirmation happens exactly once per
+ * machine per profile content.
+ */
+export function rememberProfileConfirmation(
+	stateFile: string,
+	profileName: string,
+	fingerprint: string,
+): BringState {
+	const state = loadState(stateFile);
+	state.profileConfirmations = {
+		...state.profileConfirmations,
+		[profileName]: fingerprint,
+	};
 	writeStateAtomically(stateFile, state);
 	return state;
 }

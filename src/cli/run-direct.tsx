@@ -6,10 +6,14 @@ import {
 	findExecutable,
 } from '../adapters/find-executable.js';
 import { bringDown } from '../application/bring-down.js';
-import { bringUp, resolveDotfiles } from '../application/bring-up.js';
+import { bringUp } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
+import {
+	type ResolvedDotfiles,
+	resolveRunDotfiles,
+} from '../application/profiles.js';
 import { resolveTarget } from '../application/resolve-target.js';
 import { exitCodeForProblem } from '../core/errors.js';
 import type {
@@ -23,6 +27,10 @@ import { formatResult, formatResultJson } from '../direct/format-result.js';
 import { enteringShellLine, leftShellLine } from '../direct/shell-banner.js';
 import { clearLogs, readLatestLog } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
+import {
+	ensureProfileConfig,
+	profileConfigPath,
+} from '../stores/profile-store.js';
 import { loadState, stateFilePath } from '../stores/workspace-store.js';
 import { statusColor, statusLabel, statusSymbol } from '../tui/state.js';
 import { type AnsiCode, makePaint } from './ansi.js';
@@ -124,24 +132,21 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		}
 	}
 
-	// `--dotfiles none` skips once; a URL applies and is remembered on
-	// success; nothing given falls back to the remembered default (A6).
-	const dotfiles =
-		route.options.dotfiles === 'none' ? false : route.options.dotfiles;
-	if (
-		(route.action === 'up' || route.action === 'rebuild') &&
-		dotfiles === undefined &&
-		!json
-	) {
-		const remembered = resolveDotfiles(stateFilePath(env), undefined);
-		if (remembered !== null) {
-			console.error(
-				paint(
-					'dim',
-					`· dotfiles ${remembered.repository} (remembered; --dotfiles none skips once)`,
-				),
-			);
+	// Dotfiles for this run (P3-03/P3-08): flag > workspace override >
+	// default > only profile > legacy remembered URL. Interactive choice and
+	// first-use confirmation happen HERE, before any operation starts.
+	let dotfiles: ResolvedDotfiles | null = null;
+	if (route.action === 'up' || route.action === 'rebuild') {
+		const settled = await settleDirectDotfiles(route, workspace, {
+			env,
+			json,
+			isTTY,
+			paint,
+		});
+		if (settled.outcome === 'exit') {
+			return settled.code;
 		}
+		dotfiles = settled.dotfiles;
 	}
 
 	// Always hand the exact resolved config to the upstream CLI: with two
@@ -203,6 +208,171 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	await instance.waitUntilExit();
 	console.log(formatResult(result, { color }));
 	return exitFor(result);
+}
+
+type SettledDotfiles =
+	| { outcome: 'exit'; code: number }
+	| { outcome: 'run'; dotfiles: ResolvedDotfiles | null };
+
+/**
+ * Turn the CLI flags + profile config into the dotfiles for this run.
+ * Handles the two cases resolution alone cannot: several profiles with no
+ * default (interactive pick or --profile required) and a profile's §15.4
+ * first-use confirmation (interactive y/N, or --yes when scripted).
+ */
+async function settleDirectDotfiles(
+	route: DirectRoute,
+	workspace: WorkspaceRef,
+	io: {
+		env: NodeJS.ProcessEnv;
+		json: boolean;
+		isTTY: boolean;
+		paint: ReturnType<typeof makePaint>;
+	},
+): Promise<SettledDotfiles> {
+	const configFile = profileConfigPath(io.env);
+	const stateFile = stateFilePath(io.env);
+	const loaded = ensureProfileConfig(configFile, stateFile);
+	if (!loaded.ok) {
+		console.error(loaded.problem.summary);
+		if (loaded.problem.remedy !== undefined) {
+			console.error(loaded.problem.remedy);
+		}
+		return { outcome: 'exit', code: exitCodeForProblem(loaded.problem.code) };
+	}
+	const config = loaded.config;
+	const state = loadState(stateFile);
+	const request = {
+		flagDotfiles:
+			route.options.dotfiles === 'none'
+				? (false as const)
+				: route.options.dotfiles,
+		flagProfile:
+			route.options.profile === 'none'
+				? (false as const)
+				: route.options.profile,
+		workspacePath: workspace.rootPath,
+	};
+	let resolution = resolveRunDotfiles(config, state, request);
+
+	if (resolution.outcome === 'choose') {
+		if (!io.isTTY || io.json) {
+			console.error(
+				`Several dotfiles profiles exist (${resolution.names.join(', ')}) and none is the default.`,
+			);
+			console.error(
+				'Pass --profile <name> (or --profile none), or set a default in the TUI: bring profiles',
+			);
+			return { outcome: 'exit', code: EXIT.usage };
+		}
+		const chosen = await chooseProfileInteractively(resolution.names);
+		if (chosen === null) {
+			console.error(io.paint('dim', '· continuing without dotfiles'));
+			return { outcome: 'run', dotfiles: null };
+		}
+		resolution = resolveRunDotfiles(config, state, {
+			...request,
+			flagProfile: chosen,
+		});
+	}
+	if (resolution.outcome !== 'resolved') {
+		if (resolution.outcome === 'failed') {
+			console.error(resolution.problem.summary);
+			if (resolution.problem.remedy !== undefined) {
+				console.error(resolution.problem.remedy);
+			}
+			return {
+				outcome: 'exit',
+				code: exitCodeForProblem(resolution.problem.code),
+			};
+		}
+		return { outcome: 'run', dotfiles: null };
+	}
+
+	const resolved = resolution.dotfiles;
+	if (resolved === null) {
+		return { outcome: 'run', dotfiles: null };
+	}
+	if (resolved.needsConfirmation === true && !route.options.yes) {
+		if (!io.isTTY || io.json) {
+			console.error(
+				`First use of dotfiles profile ${resolved.profileName}: confirm it with --yes or skip it with --profile none.`,
+			);
+			printProfileSummary(resolved, console.error);
+			return { outcome: 'exit', code: EXIT.usage };
+		}
+		console.error(
+			`First use of dotfiles profile ${resolved.profileName} — it will run inside the container:`,
+		);
+		printProfileSummary(resolved, console.error);
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		let answer: string;
+		try {
+			answer = await rl.question('Apply this profile? [y/N] ');
+		} finally {
+			rl.close();
+		}
+		if (!/^y(es)?$/i.test(answer.trim())) {
+			console.error(io.paint('dim', '· continuing without dotfiles'));
+			return { outcome: 'run', dotfiles: null };
+		}
+	}
+	if (!io.json) {
+		const note =
+			resolved.source === 'profile'
+				? `· dotfiles profile ${resolved.profileName} → ${resolved.repository} (--profile none skips once)`
+				: resolved.source === 'remembered'
+					? `· dotfiles ${resolved.repository} (remembered; --dotfiles none skips once)`
+					: null;
+		if (note !== null) {
+			console.error(io.paint('dim', note));
+		}
+	}
+	return { outcome: 'run', dotfiles: resolved };
+}
+
+function printProfileSummary(
+	resolved: ResolvedDotfiles,
+	write: (line: string) => void,
+): void {
+	write(`  repository   ${resolved.repository}`);
+	write(`  install      ${resolved.installCommand ?? '(repository default)'}`);
+	if (resolved.targetPath !== undefined) {
+		write(`  target path  ${resolved.targetPath}`);
+	}
+}
+
+async function chooseProfileInteractively(
+	names: readonly string[],
+): Promise<string | null> {
+	console.error('Several dotfiles profiles exist and none is the default:');
+	names.forEach((name, index) => {
+		console.error(`  ${index + 1}) ${name}`);
+	});
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	try {
+		for (;;) {
+			const answer = (
+				await rl.question('Profile for this run (number, name, or `none`): ')
+			).trim();
+			if (answer === 'none' || answer === '') {
+				return null;
+			}
+			const byNumber = names[Number(answer) - 1];
+			if (byNumber !== undefined && /^\d+$/.test(answer)) {
+				return byNumber;
+			}
+			if (names.includes(answer)) {
+				return answer;
+			}
+			console.error(`  \`${answer}\` is not one of the profiles above.`);
+		}
+	} finally {
+		rl.close();
+	}
 }
 
 function exitFor(result: OperationResult): number {

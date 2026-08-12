@@ -9,6 +9,7 @@ export type BringErrorCode =
 	| 'WORKSPACE_NOT_FOUND'
 	| 'CONFIG_NOT_FOUND'
 	| 'CONFIG_AMBIGUOUS'
+	| 'PROFILE_CONFIG_INVALID'
 	| 'OPERATION_CONFLICT'
 	| 'DEVCONTAINER_FAILED'
 	| 'DOCKER_FAILED'
@@ -27,6 +28,9 @@ export interface BringProblem {
 export function exitCodeForProblem(code: BringErrorCode): number {
 	switch (code) {
 		case 'USAGE_ERROR':
+		// The profile config is user-authored input; a broken one is fixed by
+		// the user, so it exits like a usage problem (amendment A8).
+		case 'PROFILE_CONFIG_INVALID':
 			return 2;
 		case 'WORKSPACE_NOT_FOUND':
 		case 'CONFIG_NOT_FOUND':

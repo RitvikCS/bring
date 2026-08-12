@@ -68,6 +68,9 @@ describe('parseArgv', () => {
 			{ dotfiles: 'https://github.com/u/dotfiles' },
 		],
 		[['rebuild', '--dotfiles', 'none'], '.', 'rebuild', { dotfiles: 'none' }],
+		// Profiles (P3-10): a name or the literal `none`, on up and rebuild.
+		[['up', '--profile', 'personal'], '.', 'up', { profile: 'personal' }],
+		[['rebuild', '--profile', 'none'], '.', 'rebuild', { profile: 'none' }],
 	] as const)('parses %j as a direct command', (argv, target, action, opts) => {
 		expect(parseArgv(argv)).toEqual({
 			kind: 'direct',
@@ -102,6 +105,11 @@ describe('parseArgv', () => {
 		[['up', '--clear'], /only applies to logs/i],
 		[['up', '--dotfiles'], /needs a repository url/i],
 		[['status', '--dotfiles', 'x'], /only applies to up and rebuild/i],
+		[['up', '--profile'], /needs a profile name/i],
+		[['shell', '--profile', 'x'], /only applies to up and rebuild/i],
+		[['up', '--profile', 'a', '--dotfiles', 'b'], /conflict/i],
+		[['forget'], /needs exactly one workspace/i],
+		[['forget', 'a', 'b'], /needs exactly one workspace/i],
 		[['up', '--', 'zsh'], /only apply to shell/i],
 		[['--', 'zsh'], /only apply to shell/i],
 	] as const)('rejects %j with a usage error', (argv, pattern) => {
