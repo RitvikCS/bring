@@ -6,6 +6,18 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The bundled Dev Containers CLI moves from 0.87.x to 0.89.x (range
+  `^0.89.0`). The old `^0.87.0` range could never pick up 0.88 or later, so
+  installs without a system-wide `devcontainer` were stuck on a CLI from
+  May 2026. Upstream 0.88 (WSLc support) and 0.89 (opt-in OCI auth
+  hardening) are additive; the commands and `up` flags Bring relies on are
+  unchanged.
+- `bring doctor` now names the Dev Containers CLI copy in use either way —
+  `(on PATH: /path/to/devcontainer)` or `(bundled with Bring)` — so a stale
+  global install shadowing the bundled CLI is visible at a glance.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added

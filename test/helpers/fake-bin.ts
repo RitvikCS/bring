@@ -21,10 +21,10 @@ export function writeFakeBin(
 	return file;
 }
 
-// Mirrors the real `devcontainer --help` of @devcontainers/cli 0.87.0:
+// Mirrors the real `devcontainer --help` of @devcontainers/cli 0.89.0:
 // note there is NO stop and NO down — Bring handles those through Docker.
 export const HEALTHY_DEVCONTAINER = `case "$1" in
-	--version) echo "0.87.0" ;;
+	--version) echo "0.89.0" ;;
 	--help)
 		echo "devcontainer <command>"
 		echo ""

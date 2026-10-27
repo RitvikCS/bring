@@ -118,12 +118,16 @@ async function checkDevcontainer(
 		];
 	}
 
+	// Always name the copy in use: one on PATH shadows the bundled copy, so a
+	// stale global install is the usual cause of a surprising version.
 	const cliCheck: DoctorCheck = {
 		id: 'devcontainer-cli',
 		label: cliLabel,
 		status: 'ok',
 		detail: `${version.stdout.trim() || 'installed'}${
-			resolved.source === 'bundled' ? ' (bundled with Bring)' : ''
+			resolved.source === 'bundled'
+				? ' (bundled with Bring)'
+				: ` (on PATH: ${executable})`
 		}`,
 	};
 

@@ -42,7 +42,9 @@ describe('runDoctor', () => {
 
 		expect(report.healthy).toBe(true);
 		expect(check(report, 'node').detail).toBe('24.4.1');
-		expect(check(report, 'devcontainer-cli').detail).toBe('0.87.0');
+		expect(check(report, 'devcontainer-cli').detail).toBe(
+			`0.89.0 (on PATH: ${join(dir, 'devcontainer')})`,
+		);
 		expect(check(report, 'docker-client').detail).toBe('28.1.1');
 		expect(check(report, 'docker-daemon').detail).toBe(
 			'reachable · context default',
