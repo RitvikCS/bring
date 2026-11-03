@@ -1,4 +1,7 @@
-import type { OperationResult } from '../core/operation-events.js';
+import type {
+	OperationEvent,
+	OperationResult,
+} from '../core/operation-events.js';
 
 const ANSI = {
 	green: '\u001b[32m',
@@ -70,39 +73,60 @@ export function formatExecSummary(
 }
 
 /**
- * The one JSON document a direct command emits in --json mode (spec §10.6).
- * `extra` carries operation-specific fields (e.g. exec's exitCode/stdout),
- * placed before `error`/`logPath` so the shared shape stays stable.
+ * The result as a plain object — what `--json` prints, and what the final
+ * `completed` line of `--events` carries. `extra` holds operation-specific
+ * fields (e.g. exec's exitCode/stdout), placed before `error`/`logPath` so
+ * the shared shape stays stable.
  */
+export function resultDocument(
+	result: OperationResult,
+	extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+	return {
+		operation: result.operation,
+		outcome: result.outcome,
+		workspace: result.workspace,
+		workspaceName: result.workspaceName,
+		durationMs: result.durationMs,
+		containerIds: result.containerIds,
+		message: result.message,
+		...extra,
+		...(result.problem === undefined
+			? {}
+			: {
+					error: {
+						code: result.problem.code,
+						summary: result.problem.summary,
+						...(result.problem.remedy === undefined
+							? {}
+							: { remedy: result.problem.remedy }),
+					},
+				}),
+		...(result.logPath === undefined ? {} : { logPath: result.logPath }),
+	};
+}
+
+/** The one JSON document a direct command emits in --json mode (spec §10.6). */
 export function formatResultJson(
-	result: OperationResult & { childExitCode?: number },
+	result: OperationResult,
 	extra: Record<string, unknown> = {},
 ): string {
 	return JSON.stringify(
-		{
-			schemaVersion: 1,
-			operation: result.operation,
-			outcome: result.outcome,
-			workspace: result.workspace,
-			workspaceName: result.workspaceName,
-			durationMs: result.durationMs,
-			containerIds: result.containerIds,
-			message: result.message,
-			...extra,
-			...(result.problem === undefined
-				? {}
-				: {
-						error: {
-							code: result.problem.code,
-							summary: result.problem.summary,
-							...(result.problem.remedy === undefined
-								? {}
-								: { remedy: result.problem.remedy }),
-						},
-					}),
-			...(result.logPath === undefined ? {} : { logPath: result.logPath }),
-		},
+		{ schemaVersion: 1, ...resultDocument(result, extra) },
 		null,
 		2,
 	);
+}
+
+/**
+ * One `--events` line (P4 §2b): NDJSON, so a reader can tail a backgrounded
+ * `bring up` and act on each stage. `completed` carries the same object
+ * `--json` would print.
+ */
+export function formatEventLine(event: OperationEvent): string {
+	const body =
+		event.type === 'completed'
+			? { type: 'completed', result: resultDocument(event.result) }
+			: event;
+	return JSON.stringify({ schemaVersion: 1, ...body });
 }

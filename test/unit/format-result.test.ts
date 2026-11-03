@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OperationResult } from '../../src/core/operation-events.js';
 import {
+	formatEventLine,
 	formatResult,
 	formatResultJson,
 } from '../../src/direct/format-result.js';
@@ -71,5 +72,44 @@ describe('formatResultJson', () => {
 		const doc = JSON.parse(formatResultJson(SUCCESS));
 		expect(doc.outcome).toBe('success');
 		expect('error' in doc).toBe(false);
+	});
+});
+
+describe('formatEventLine (--events)', () => {
+	it('prints stage events as one JSON line with schemaVersion', () => {
+		const line = formatEventLine({
+			type: 'stage',
+			stage: 'building',
+			message: 'Building image',
+		});
+		expect(line).not.toContain('\n');
+		expect(JSON.parse(line)).toEqual({
+			schemaVersion: 1,
+			type: 'stage',
+			stage: 'building',
+			message: 'Building image',
+		});
+	});
+
+	it('ends with the same result object --json prints', () => {
+		const result = {
+			operation: 'up' as const,
+			outcome: 'failed' as const,
+			workspace: '/w',
+			workspaceName: 'w',
+			message: 'boom',
+			durationMs: 10,
+			containerIds: [],
+			problem: {
+				code: 'DEVCONTAINER_FAILED' as const,
+				summary: 'boom',
+				remedy: 'bring doctor',
+			},
+			logPath: '/l',
+		};
+		const line = JSON.parse(formatEventLine({ type: 'completed', result }));
+		const { schemaVersion, ...doc } = JSON.parse(formatResultJson(result));
+		expect(schemaVersion).toBe(1);
+		expect(line).toEqual({ schemaVersion: 1, type: 'completed', result: doc });
 	});
 });

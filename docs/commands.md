@@ -245,6 +245,7 @@ automatically.
 | ------ | ------ |
 | `--json` | machine-readable output, never animated |
 | `--verbose` | stream the underlying devcontainer/docker output live |
+| `--events` | up/rebuild/down/remove: progress as JSON lines (see below) |
 | `--config <path>` | use an explicit devcontainer.json (remembered) |
 | `--yes`, `-y` | skip the `remove` confirmation |
 | `--no-cache` | rebuild without the Docker build cache |
@@ -253,6 +254,38 @@ automatically.
 | `--dotfiles <repo\|none>` | dotfiles repo for up/rebuild (remembered) |
 | `--profile <name\|none>` | dotfiles profile for up/rebuild (see Profiles) |
 | `--help`, `-h` / `--version`, `-v` | help / version |
+
+## Progress for programs: `--events`
+
+`--json` stays silent until the operation ends — fine for `status`, but a
+`bring up` that builds an image can take minutes. `--events` prints each
+step as it happens, one JSON object per line (NDJSON) on stdout:
+
+```sh
+bring up --events
+```
+
+```
+{"schemaVersion":1,"type":"started","operation":"up","workspaceName":"api"}
+{"schemaVersion":1,"type":"stage","stage":"building","message":"Building api…"}
+{"schemaVersion":1,"type":"stage","stage":"ready","message":"api is ready"}
+{"schemaVersion":1,"type":"completed","result":{"operation":"up","outcome":"success",…}}
+```
+
+- Stages: `validating`, `reading-config`, `building`, `creating`, `starting`,
+  `running-hooks`, `stopping`, `removing`, `ready`.
+- The last line is always `type: "completed"`, and its `result` is exactly
+  what `--json` would print. Wait for it; its `outcome` and the exit code
+  tell you how it went. A target that cannot be resolved still produces a
+  single `completed` line.
+- With `--verbose`, raw build output arrives as `type: "output"` lines
+  (`stream`, `chunk`). Without it they are left out — build logs are big.
+- Like `--json`, it never prompts: `remove` needs `--yes`, and a dotfiles
+  profile choice must be made with `--profile`.
+- Not combinable with `--json`. Only for `up`, `rebuild`, `down`, `remove`.
+
+Coding agents that run `bring up` in the background can read this stream to
+tell "still building" from "stuck".
 
 ## Exit codes
 

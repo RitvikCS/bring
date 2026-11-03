@@ -50,6 +50,8 @@ Options
   --version, -v                Show the Bring version
   --json                       Machine-readable output, never animated
   --verbose                    Stream the underlying command output
+  --events                     up/rebuild/down/remove: print progress as
+                               JSON lines, the last one is the result
   --config <path>              Use an explicit devcontainer.json
   --yes, -y                    Skip the confirmation prompt (remove)
   --no-cache                   Rebuild without the Docker build cache

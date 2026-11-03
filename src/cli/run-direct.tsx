@@ -25,6 +25,7 @@ import type { WorkspaceRef } from '../core/types.js';
 import type { resolveWorkspace } from '../core/workspace-resolver.js';
 import { DirectOperation } from '../direct/DirectOperation.js';
 import {
+	formatEventLine,
 	formatExecSummary,
 	formatResult,
 	formatResultJson,
@@ -54,7 +55,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	const cwd = process.cwd();
 	const isTTY = process.stdout.isTTY === true;
 	const json = route.options.json;
-	const color = isTTY && env.NO_COLOR === undefined && !json;
+	const events = route.options.events;
+	// --json and --events are for programs: never prompt, never animate.
+	const machine = json || events;
+	const color = isTTY && env.NO_COLOR === undefined && !machine;
 
 	const { result: resolved, usedRememberedConfig } = resolveTarget(
 		route.target,
@@ -65,10 +69,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		},
 	);
 	if (resolved.outcome !== 'resolved') {
-		return reportResolutionFailure(resolved, json);
+		return reportResolutionFailure(resolved, { json, events });
 	}
 	const paint = makePaint(color);
-	if (usedRememberedConfig !== undefined && !json) {
+	if (usedRememberedConfig !== undefined && !machine) {
 		const rel = relative(resolved.workspace.rootPath, usedRememberedConfig);
 		console.error(
 			paint('dim', `· config ${rel} (remembered; --config overrides)`),
@@ -128,7 +132,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	}
 
 	if (route.action === 'remove' && !route.options.yes) {
-		const confirmed = await confirmRemoval(workspace);
+		// A prompt would land on stdout and corrupt the JSON/NDJSON stream.
+		const confirmed = machine
+			? 'not-interactive'
+			: await confirmRemoval(workspace);
 		if (confirmed === 'not-interactive') {
 			console.error(
 				'remove deletes containers — confirm with --yes when not running interactively.',
@@ -148,7 +155,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 	if (route.action === 'up' || route.action === 'rebuild') {
 		const settled = await settleDirectDotfiles(route, workspace, {
 			env,
-			json,
+			json: machine,
 			isTTY,
 			paint,
 		});
@@ -181,6 +188,28 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 				return bringDown(ctx, workspace, { remove: true });
 		}
 	};
+
+	// --events: one JSON line per event on stdout, ending with `completed`
+	// (P4 §2b). Raw output events only with --verbose — build logs are big.
+	if (events) {
+		let completed = false;
+		bus.on((event) => {
+			if (event.type === 'output' && !route.options.verbose) {
+				return;
+			}
+			if (event.type === 'completed') {
+				completed = true;
+			}
+			process.stdout.write(`${formatEventLine(event)}\n`);
+		});
+		const result = await operation();
+		if (!completed) {
+			process.stdout.write(
+				`${formatEventLine({ type: 'completed', result })}\n`,
+			);
+		}
+		return exitFor(result);
+	}
 
 	// --json: one document on stdout, nothing else (spec §10.6).
 	if (json) {
@@ -486,9 +515,26 @@ function reportResolutionFailure(
 		ReturnType<typeof resolveWorkspace>,
 		{ outcome: 'resolved' }
 	>,
-	json: boolean,
+	io: { json: boolean; events: boolean },
 ): number {
-	if (json) {
+	if (io.events) {
+		// Nothing started, but a reader waiting for `completed` must get one.
+		process.stdout.write(
+			`${JSON.stringify({
+				schemaVersion: 1,
+				type: 'completed',
+				result: {
+					outcome: 'failed',
+					error: {
+						code: resolved.problem.code,
+						summary: resolved.problem.summary,
+					},
+				},
+			})}\n`,
+		);
+		return exitCodeForProblem(resolved.problem.code);
+	}
+	if (io.json) {
 		console.log(
 			JSON.stringify(
 				{

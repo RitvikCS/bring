@@ -19,6 +19,17 @@ follow [Semantic Versioning](https://semver.org/).
   container — plain `devcontainer exec`/`docker exec` leave it running.
   Each run's full output is kept under `logs/<workspace>/exec/` (last 20),
   separate from the `up`/`rebuild` log that `bring logs` shows.
+- `--events` for `up`, `rebuild`, `down`, `remove`: progress as one JSON
+  object per line on stdout, ending with a `completed` line that carries the
+  same result `--json` prints. Raw build output is included only with
+  `--verbose`. Lets a script or agent watch a long `bring up` instead of
+  waiting blind.
+
+### Fixed
+
+- `bring remove --json` without `--yes` no longer shows a y/N prompt on
+  stdout in a terminal (it corrupted the JSON); like non-interactive runs,
+  it now asks for `--yes` and exits 2.
 
 ## [0.3.0] - 2026-08-12
 

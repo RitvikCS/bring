@@ -8,6 +8,7 @@ const DEFAULTS = {
 	noCache: false,
 	clear: false,
 	detach: false,
+	events: false,
 };
 
 describe('parseArgv', () => {
@@ -184,6 +185,31 @@ describe('parseArgv — exec (Phase 4)', () => {
 		).toMatchObject({
 			action: 'exec',
 			options: { detach: true, json: true },
+		});
+	});
+});
+
+describe('parseArgv — --events (Phase 4)', () => {
+	it.each([
+		['up'],
+		['rebuild'],
+		['down'],
+		['remove'],
+	])('accepts %s', (action) => {
+		expect(parseArgv([action, '--events', '--verbose'])).toMatchObject({
+			kind: 'direct',
+			options: { events: true, verbose: true },
+		});
+	});
+
+	it.each([
+		[['up', '--events', '--json'], 'conflict'],
+		[['status', '--events'], 'only applies to up'],
+		[['exec', '--events', '--', 'x'], 'only applies to up'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
 		});
 	});
 });

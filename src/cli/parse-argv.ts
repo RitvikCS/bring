@@ -29,6 +29,8 @@ export interface DirectOptions {
 	timeoutSeconds?: number;
 	/** exec: start in the background and return at once. */
 	detach: boolean;
+	/** up/rebuild/down/remove: one JSON line per OperationEvent (NDJSON). */
+	events: boolean;
 }
 
 export type CliRoute =
@@ -85,6 +87,7 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		noCache: false,
 		clear: false,
 		detach: false,
+		events: false,
 	};
 	if (shellCommand !== undefined) {
 		options.shellCommand = shellCommand;
@@ -118,6 +121,9 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				break; // honored by renderers via NO_COLOR handling in cli.tsx
 			case '--detach':
 				options.detach = true;
+				break;
+			case '--events':
+				options.events = true;
 				break;
 			case '--timeout': {
 				const value = head[i + 1];
@@ -245,6 +251,16 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 	) {
 		return usage(TOKENS_AFTER_SEPARATOR);
 	}
+	if (options.events) {
+		if (options.json) {
+			return usage(
+				'--events and --json conflict — --events already ends with the result as its last line.',
+			);
+		}
+		if (!EVENT_ACTIONS.has(action)) {
+			return usage('--events only applies to up, rebuild, down, and remove.');
+		}
+	}
 	if (action === 'exec') {
 		const problem = validateExec(options);
 		if (problem !== undefined) {
@@ -283,6 +299,13 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 
 	return { kind: 'direct', target, action, options };
 }
+
+const EVENT_ACTIONS = new Set<DirectAction>([
+	'up',
+	'rebuild',
+	'down',
+	'remove',
+]);
 
 const TOKENS_AFTER_SEPARATOR =
 	'Tokens after `--` only apply to shell and exec, e.g. `bring . exec -- npm test`.';
