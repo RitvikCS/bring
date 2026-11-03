@@ -7,6 +7,7 @@ const DEFAULTS = {
 	yes: false,
 	noCache: false,
 	clear: false,
+	detach: false,
 };
 
 describe('parseArgv', () => {
@@ -118,5 +119,71 @@ describe('parseArgv', () => {
 		if (route.kind === 'usage-error') {
 			expect(route.message).toMatch(pattern);
 		}
+	});
+});
+
+describe('parseArgv — exec (Phase 4)', () => {
+	it('routes exec with its command after `--`', () => {
+		expect(parseArgv(['exec', '--json', '--', 'npm', 'test'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'exec',
+			options: { ...DEFAULTS, json: true, shellCommand: ['npm', 'test'] },
+		});
+	});
+
+	it('accepts a target, --timeout and --config before `--`', () => {
+		expect(
+			parseArgv(['api', 'exec', '--timeout', '30', '--', 'sh', '-c', 'x']),
+		).toMatchObject({
+			kind: 'direct',
+			target: 'api',
+			action: 'exec',
+			options: { timeoutSeconds: 30, shellCommand: ['sh', '-c', 'x'] },
+		});
+	});
+
+	it('never reads flags after `--` as Bring flags', () => {
+		expect(parseArgv(['exec', '--', 'ls', '--json'])).toMatchObject({
+			options: { json: false, shellCommand: ['ls', '--json'] },
+		});
+	});
+
+	it.each([
+		[['exec']],
+		[['exec', '--json']],
+		[['exec', '--']],
+	])('requires a command after `--` (%j)', (argv) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('needs a command'),
+		});
+	});
+
+	it.each([
+		[['exec', '--timeout', '0', '--', 'x'], 'whole number'],
+		[['exec', '--timeout', 'soon', '--', 'x'], 'whole number'],
+		[['exec', '--timeout'], 'whole number'],
+		[['exec', '--timeout', '1.5', '--', 'x'], 'whole number'],
+		[['exec', '--detach', '--timeout', '5', '--', 'x'], 'conflict'],
+		[['exec', '--verbose', '--', 'x'], 'does not apply to exec'],
+		[['exec', '--yes', '--', 'x'], 'does not apply to exec'],
+		[['up', '--timeout', '5'], 'only applies to exec'],
+		[['up', '--detach'], 'only applies to exec'],
+		[['up', '--', 'x'], 'shell and exec'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+
+	it('allows --detach with --json', () => {
+		expect(
+			parseArgv(['exec', '--detach', '--json', '--', 'npm', 'run', 'dev']),
+		).toMatchObject({
+			action: 'exec',
+			options: { detach: true, json: true },
+		});
 	});
 });

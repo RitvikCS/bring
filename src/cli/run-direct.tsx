@@ -8,6 +8,7 @@ import {
 import { bringDown } from '../application/bring-down.js';
 import { bringUp } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
+import { execCommand, startDetached } from '../application/exec-command.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
 import {
@@ -23,7 +24,11 @@ import type {
 import type { WorkspaceRef } from '../core/types.js';
 import type { resolveWorkspace } from '../core/workspace-resolver.js';
 import { DirectOperation } from '../direct/DirectOperation.js';
-import { formatResult, formatResultJson } from '../direct/format-result.js';
+import {
+	formatExecSummary,
+	formatResult,
+	formatResultJson,
+} from '../direct/format-result.js';
 import { enteringShellLine, leftShellLine } from '../direct/shell-banner.js';
 import { clearLogs, readLatestLog } from '../stores/log-store.js';
 import { bringStateDir } from '../stores/paths.js';
@@ -116,6 +121,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		}
 		console.error(leftShellLine(name, color, result.childExitCode));
 		return result.childExitCode ?? EXIT.success;
+	}
+
+	if (route.action === 'exec') {
+		return runExecRoute(ctx, workspace, route, { json, color });
 	}
 
 	if (route.action === 'remove' && !route.options.yes) {
@@ -373,6 +382,88 @@ async function chooseProfileInteractively(
 	} finally {
 		rl.close();
 	}
+}
+
+/**
+ * `bring exec` (P4 §2, DD-6): when the command ran, its own exit code is
+ * Bring's exit code — in plain and --json mode alike — so `bring exec --
+ * npm test && deploy` works. When Bring could not run it, Bring's
+ * contractual codes apply (timeout → 124).
+ */
+async function runExecRoute(
+	ctx: OperationContext,
+	workspace: WorkspaceRef,
+	route: DirectRoute,
+	io: { json: boolean; color: boolean },
+): Promise<number> {
+	const command = route.options.shellCommand ?? [];
+	if (route.options.detach) {
+		const result = await startDetached(ctx, workspace, command, {
+			config: workspace.configPath,
+		});
+		if (io.json) {
+			console.log(
+				formatResultJson(result, {
+					command: result.command,
+					...(result.pid === undefined
+						? {}
+						: {
+								pid: result.pid,
+								containerLogPath: result.containerLogPath,
+								stopCommand: result.stopCommand,
+								tailCommand: result.tailCommand,
+							}),
+					warnings: result.warnings,
+				}),
+			);
+			return exitFor(result);
+		}
+		console.error(formatResult(result, { color: io.color }));
+		if (result.outcome === 'success') {
+			console.error(`  Output: ${result.tailCommand}`);
+			console.error(`  Stop:   ${result.stopCommand}`);
+			if (result.warnings.includes('DETACH_NO_SETSID')) {
+				console.error(
+					'  (no setsid in this container — stopping may leave child processes)',
+				);
+			}
+			console.error(
+				`  Reach a server from this machine: bring ${workspace.input || '.'} forward <port>`,
+			);
+		}
+		return exitFor(result);
+	}
+
+	const result = await execCommand(ctx, workspace, command, {
+		config: workspace.configPath,
+		timeoutMs:
+			route.options.timeoutSeconds === undefined
+				? undefined
+				: route.options.timeoutSeconds * 1000,
+		onOutput: io.json
+			? undefined
+			: (stream, chunk) => {
+					(stream === 'stdout' ? process.stdout : process.stderr).write(chunk);
+				},
+	});
+	if (io.json) {
+		console.log(
+			formatResultJson(result, {
+				command: result.command,
+				...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+				stdout: result.stdout,
+				stderr: result.stderr,
+				truncated: result.truncated,
+			}),
+		);
+	} else {
+		// Summary on stderr only: stdout is exactly the command's output.
+		console.error(formatExecSummary(result, { color: io.color }));
+	}
+	if (result.outcome === 'success') {
+		return result.exitCode ?? EXIT.success;
+	}
+	return exitFor(result);
 }
 
 function exitFor(result: OperationResult): number {

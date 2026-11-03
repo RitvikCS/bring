@@ -62,6 +62,72 @@ bring shell -- python3 # any command, interactively
 The shell's exit code passes through, so scripting against it works. The
 workspace must be running (`bring up` first).
 
+### `bring exec`
+
+Runs one command inside the running container without taking over your
+terminal — for scripts, CI steps, and coding agents. Everything after `--`
+is the command, passed as-is (no shell; use `-- sh -c '…'` for pipes):
+
+```sh
+bring exec -- npm test
+bring ../api exec --timeout 300 -- pytest -x
+bring exec --json -- sh -c 'cat package.json | head -5'
+```
+
+- The command's stdout and stderr stream live to yours; Bring's one-line
+  summary goes to **stderr**, so `bring exec -- cat out.json > out.json`
+  gives you exactly the file.
+- **Exit code**: when the command ran, Bring exits with *the command's own*
+  exit code, so `bring exec -- npm test && deploy` works. When Bring could
+  not run it (workspace not running, Docker down), Bring's own codes
+  apply. A command that itself exits 3 therefore looks like a resolution
+  failure; if you must tell them apart, use `--json` and read `outcome` /
+  `error.code` vs `exitCode`.
+- `--timeout <seconds>` stops the command — and everything it started
+  inside the container — and exits **124**.
+- Ctrl+C stops the command inside the container too (exit 130). Plain
+  `docker exec`/`devcontainer exec` leave it running.
+- No TTY and no stdin: use `bring shell -- <cmd>` for anything interactive.
+- The workspace must be running; `exec` never starts it.
+- The full output of each run is saved under Bring's state directory
+  (`logs/<workspace>/exec/`, last 20 kept) and its path is printed on
+  failure. `bring logs` keeps showing the last `up`/`rebuild` log.
+
+`--json` prints one document instead of streaming:
+
+```jsonc
+{
+  "schemaVersion": 1, "operation": "exec",
+  "outcome": "success",            // Bring ran it: success | failed | interrupted
+  "workspace": "/abs/path", "workspaceName": "api",
+  "durationMs": 4210, "containerIds": ["…"],
+  "message": "npm test exited with code 1",
+  "command": ["npm", "test"],
+  "exitCode": 1,                   // the command's code (absent if it never ran)
+  "stdout": "…", "stderr": "…",    // last 16 KiB of each
+  "truncated": { "stdout": false, "stderr": true },
+  "logPath": "…/exec/….log",
+  "error": { "code": "COMMAND_TIMEOUT", "summary": "…" }  // only on failure
+}
+```
+
+#### `--detach`: servers
+
+`bring exec --detach -- npm run dev` starts the command in the background
+inside the container and returns at once with its pid, where its output
+goes, and the exact command that stops it (and every child it spawned):
+
+```
+✓ started npm run dev in api (pid 559)
+  Output: bring . exec -- tail -n 100 /tmp/bring-detached-3f2a….log
+  Stop:   bring . exec -- kill -15 -559
+```
+
+With `--json` the same appears as `pid`, `containerLogPath`, `tailCommand`,
+`stopCommand`, and `warnings`. Bring does not keep track of detached
+processes; `bring down` stops everything anyway. To open the server from
+your machine, see `bring forward`.
+
 ### `bring status`
 
 One workspace's live summary: status, containers, image, config, ports.
@@ -182,6 +248,8 @@ automatically.
 | `--config <path>` | use an explicit devcontainer.json (remembered) |
 | `--yes`, `-y` | skip the `remove` confirmation |
 | `--no-cache` | rebuild without the Docker build cache |
+| `--timeout <seconds>` | exec: stop the command after N seconds (exit 124) |
+| `--detach` | exec: start in the background, print pid and stop command |
 | `--dotfiles <repo\|none>` | dotfiles repo for up/rebuild (remembered) |
 | `--profile <name\|none>` | dotfiles profile for up/rebuild (see Profiles) |
 | `--help`, `-h` / `--version`, `-v` | help / version |
@@ -196,7 +264,11 @@ automatically.
 | 3 | workspace/configuration resolution failed |
 | 4 | a required dependency is missing or unreachable (`bring doctor`) |
 | 5 | internal Bring error |
+| 124 | `bring exec --timeout` stopped the command |
 | 130 | interrupted with Ctrl+C |
+
+`bring exec` (and `bring shell`) exit with the command's own exit code when
+the command ran; the table applies when Bring itself failed.
 
 ## Update notifications
 

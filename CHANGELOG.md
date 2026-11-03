@@ -6,6 +6,20 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `bring exec -- <cmd>`: run one command inside a running workspace without
+  taking over the terminal — for scripts, CI, and coding agents. Output
+  streams live (Bring's summary goes to stderr), and Bring exits with the
+  command's own exit code. `--json` returns the command, exit code, and the
+  last 16 KiB of stdout/stderr in one document. `--timeout <seconds>` stops
+  the command and exits 124 (new error code `COMMAND_TIMEOUT`). `--detach`
+  starts servers in the background and prints the pid plus the exact stop
+  command. Timeouts and Ctrl+C stop the whole process tree *inside* the
+  container — plain `devcontainer exec`/`docker exec` leave it running.
+  Each run's full output is kept under `logs/<workspace>/exec/` (last 20),
+  separate from the `up`/`rebuild` log that `bring logs` shows.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added

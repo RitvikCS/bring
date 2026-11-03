@@ -7,6 +7,7 @@ export type DirectAction =
 	| 'down'
 	| 'rebuild'
 	| 'shell'
+	| 'exec'
 	| 'logs'
 	| 'status'
 	| 'remove';
@@ -22,8 +23,12 @@ export interface DirectOptions {
 	dotfiles?: string;
 	/** Dotfiles profile name, or the literal `none` to skip once (P3-10). */
 	profile?: string;
-	/** Tokens after `--`, only meaningful for shell. */
+	/** Tokens after `--`, only meaningful for shell and exec. */
 	shellCommand?: string[];
+	/** exec: stop the command after this many seconds. */
+	timeoutSeconds?: number;
+	/** exec: start in the background and return at once. */
+	detach: boolean;
 }
 
 export type CliRoute =
@@ -50,6 +55,7 @@ const ACTIONS = new Set<string>([
 	'stop', // alias for down (spec §6.2)
 	'rebuild',
 	'shell',
+	'exec',
 	'logs',
 	'status',
 	'remove',
@@ -78,6 +84,7 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		yes: false,
 		noCache: false,
 		clear: false,
+		detach: false,
 	};
 	if (shellCommand !== undefined) {
 		options.shellCommand = shellCommand;
@@ -109,6 +116,23 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				break;
 			case '--no-color':
 				break; // honored by renderers via NO_COLOR handling in cli.tsx
+			case '--detach':
+				options.detach = true;
+				break;
+			case '--timeout': {
+				const value = head[i + 1];
+				const seconds = value === undefined ? Number.NaN : Number(value);
+				if (!Number.isInteger(seconds) || seconds <= 0) {
+					return {
+						kind: 'usage-error',
+						message:
+							'--timeout needs a whole number of seconds, e.g. --timeout 120',
+					};
+				}
+				options.timeoutSeconds = seconds;
+				i++;
+				break;
+			}
 			case '--dotfiles': {
 				const value = head[i + 1];
 				if (value === undefined || value.startsWith('-')) {
@@ -157,8 +181,7 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		if (shellCommand !== undefined) {
 			return {
 				kind: 'usage-error',
-				message:
-					'Tokens after `--` only apply to shell, e.g. `bring . shell -- zsh`.',
+				message: TOKENS_AFTER_SEPARATOR,
 			};
 		}
 		return { kind: 'tui' };
@@ -199,12 +222,12 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 
 	if (actionToken === undefined) {
 		return usage(
-			`Expected an action after \`${target}\` — one of: up, down, rebuild, shell, logs, status, remove.`,
+			`Expected an action after \`${target}\` — one of: up, down, rebuild, shell, exec, logs, status, remove.`,
 		);
 	}
 	if (!ACTIONS.has(actionToken)) {
 		return usage(
-			`\`${actionToken}\` is not an action. Try: up, down, rebuild, shell, logs, status, remove.`,
+			`\`${actionToken}\` is not an action. Try: up, down, rebuild, shell, exec, logs, status, remove.`,
 		);
 	}
 	if (extra !== undefined) {
@@ -215,10 +238,22 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		actionToken === 'stop' ? 'down' : actionToken
 	) as DirectAction;
 
-	if (options.shellCommand !== undefined && action !== 'shell') {
-		return usage(
-			'Tokens after `--` only apply to shell, e.g. `bring . shell -- zsh`.',
-		);
+	if (
+		options.shellCommand !== undefined &&
+		action !== 'shell' &&
+		action !== 'exec'
+	) {
+		return usage(TOKENS_AFTER_SEPARATOR);
+	}
+	if (action === 'exec') {
+		const problem = validateExec(options);
+		if (problem !== undefined) {
+			return usage(problem);
+		}
+	} else if (options.timeoutSeconds !== undefined) {
+		return usage('--timeout only applies to exec.');
+	} else if (options.detach) {
+		return usage('--detach only applies to exec.');
 	}
 	if (options.noCache && action !== 'rebuild') {
 		return usage('--no-cache only applies to rebuild.');
@@ -247,6 +282,28 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 	}
 
 	return { kind: 'direct', target, action, options };
+}
+
+const TOKENS_AFTER_SEPARATOR =
+	'Tokens after `--` only apply to shell and exec, e.g. `bring . exec -- npm test`.';
+
+function validateExec(options: DirectOptions): string | undefined {
+	if (options.shellCommand === undefined || options.shellCommand.length === 0) {
+		return '`bring exec` needs a command after `--`, e.g. `bring . exec -- npm test`.';
+	}
+	if (options.detach && options.timeoutSeconds !== undefined) {
+		return '--timeout and --detach conflict — a detached command keeps running by design.';
+	}
+	const notForExec: [boolean, string][] = [
+		[options.verbose, '--verbose'],
+		[options.yes, '--yes'],
+	];
+	for (const [set, flag] of notForExec) {
+		if (set) {
+			return `${flag} does not apply to exec.`;
+		}
+	}
+	return undefined;
 }
 
 function usage(message: string): CliRoute {

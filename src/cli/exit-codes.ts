@@ -13,6 +13,8 @@ export const EXIT = {
 	dependency: 4,
 	/** Internal Bring error. */
 	internal: 5,
+	/** `bring exec --timeout` stopped the command (GNU timeout convention). */
+	timeout: 124,
 	/** Interrupted with Ctrl+C. */
 	interrupted: 130,
 } as const;

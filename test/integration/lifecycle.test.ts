@@ -13,6 +13,10 @@ import { runCommand } from '../../src/adapters/process-runner.js';
 import { bringDown } from '../../src/application/bring-down.js';
 import { bringUp } from '../../src/application/bring-up.js';
 import type { OperationContext } from '../../src/application/context.js';
+import {
+	execCommand,
+	startDetached,
+} from '../../src/application/exec-command.js';
 import { getSnapshot } from '../../src/application/get-status.js';
 import { removeImageResources } from '../../src/application/image-actions.js';
 import { listResources } from '../../src/application/list-resources.js';
@@ -325,3 +329,61 @@ async function expectDockerSuccess(
 		throw new Error(outcome.result.stderr || outcome.result.stdout);
 	}
 }
+
+describe.runIf(RUN)('exec against a real container (Phase 4)', () => {
+	// debian-slim has no `ps`: count matching processes through /proc. The
+	// `[s]` keeps the counting script from matching itself.
+	const count = async (project: Project, pattern: string): Promise<number> => {
+		const result = await execCommand(project.ctx, project.ref, [
+			'sh',
+			'-c',
+			`for p in /proc/[0-9]*; do tr "\\0" " " < $p/cmdline 2>/dev/null; echo; done | grep -c "${pattern}" || true`,
+		]);
+		return Number(result.stdout.trim());
+	};
+
+	it(
+		'captures output, passes exit codes through, and leaves no orphans on timeout or detach-stop',
+		async () => {
+			const project = prepare('minimal');
+			const { ctx, ref } = project;
+			const up = await bringUp(ctx, ref, { config: ref.configPath });
+			expect(up.outcome).toBe('success');
+
+			const ran = await execCommand(ctx, ref, [
+				'sh',
+				'-c',
+				'echo hi; echo err >&2; exit 3',
+			]);
+			expect(ran).toMatchObject({
+				outcome: 'success',
+				exitCode: 3,
+				stdout: 'hi\n',
+				stderr: 'err\n',
+			});
+
+			// Killing the host-side exec alone would leave both sleeps running
+			// in the container (verified 2026-11-03); the group kill must not.
+			const timedOut = await execCommand(
+				ctx,
+				ref,
+				['sh', '-c', 'sleep 71 & sleep 72'],
+				{ timeoutMs: 2000 },
+			);
+			expect(timedOut.problem?.code).toBe('COMMAND_TIMEOUT');
+			expect(await count(project, '^[s]leep 7[12]')).toBe(0);
+
+			const detached = await startDetached(ctx, ref, [
+				'sh',
+				'-c',
+				'sleep 73 & sleep 74',
+			]);
+			expect(detached.outcome).toBe('success');
+			expect(await count(project, '^[s]leep 7[34]')).toBe(2);
+			await execCommand(ctx, ref, ['kill', '-15', `-${detached.pid}`]);
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			expect(await count(project, '^[s]leep 7[34]')).toBe(0);
+		},
+		5 * MINUTES,
+	);
+});

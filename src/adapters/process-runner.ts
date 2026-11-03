@@ -10,6 +10,8 @@ export interface RunOptions {
 	 * child — used for interactive shells, where the child owns the TTY.
 	 */
 	stdio?: 'capture' | 'inherit';
+	/** Aborting kills the child (SIGTERM); the run then settles normally. */
+	signal?: AbortSignal;
 }
 
 export interface RunResult {
@@ -66,7 +68,12 @@ export function runCommand(
 			process.on('SIGINT', onSigint);
 			process.on('SIGTERM', onSigterm);
 		}
+		const onAbort = () => {
+			child.kill('SIGTERM');
+		};
+		options.signal?.addEventListener('abort', onAbort, { once: true });
 		const cleanup = () => {
+			options.signal?.removeEventListener('abort', onAbort);
 			if (!inherit) {
 				process.removeListener('SIGINT', onSigint);
 				process.removeListener('SIGTERM', onSigterm);

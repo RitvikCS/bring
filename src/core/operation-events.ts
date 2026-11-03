@@ -21,6 +21,7 @@ export type OperationKind =
 	| 'rebuild'
 	| 'remove'
 	| 'shell'
+	| 'exec'
 	| 'status'
 	| 'logs';
 

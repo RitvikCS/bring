@@ -26,6 +26,9 @@ Actions
   down                         Stop it, keeping containers for a fast restart
   rebuild                      Rebuild the environment (--no-cache supported)
   shell                        Open a shell inside it (-- <cmd> to override)
+  exec -- <cmd>                Run one command inside it, non-interactively;
+                               exits with the command's own exit code
+                               (--json, --timeout <s>, --detach)
   logs                         Show the last captured operation log (--clear)
   status                       Show a one-workspace status summary
   remove                       Stop and DELETE devcontainer resources
@@ -50,6 +53,9 @@ Options
   --config <path>              Use an explicit devcontainer.json
   --yes, -y                    Skip the confirmation prompt (remove)
   --no-cache                   Rebuild without the Docker build cache
+  --timeout <seconds>          exec: stop the command after N seconds (exit 124)
+  --detach                     exec: start in the background, print pid
+                               and a stop command
   --dotfiles <repo|none>       Apply a dotfiles repo during up/rebuild.
                                Remembered after one success; none skips once
   --profile <name|none>        Use a named dotfiles profile for this run
@@ -59,6 +65,7 @@ Examples
   bring up                     Start the current project
   bring ../api down            Stop the api project next door
   bring . shell -- zsh         Open zsh instead of bash
+  bring exec -- npm test       Run the tests inside the container
   bring status --json          Feed a script
 
 Inside the TUI, press ? for keyboard help.
