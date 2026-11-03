@@ -9,7 +9,9 @@ import { EXIT } from './cli/exit-codes.js';
 import { helpText } from './cli/help.js';
 import { parseArgv } from './cli/parse-argv.js';
 import { renderDoctorHuman, renderDoctorJson } from './cli/render-doctor.js';
+import { reportForget, reportForgetJson } from './cli/report-forget.js';
 import { runDirect } from './cli/run-direct.js';
+import { runInventory, runPrune } from './cli/run-inventory.js';
 import {
 	refreshUpdateCacheInBackground,
 	updateNotice,
@@ -100,31 +102,13 @@ async function main(): Promise<number> {
 				},
 				route.target,
 			);
-			switch (result.outcome) {
-				case 'forgotten':
-					console.log(
-						`Forgot ${result.name} (${result.entry.path}). Containers, images, and files are untouched.`,
-					);
-					return EXIT.success;
-				case 'empty-registry':
-					console.log('No workspaces remembered — nothing to forget.');
-					return EXIT.success;
-				case 'not-found':
-					console.error(
-						`No remembered workspace matches \`${result.target}\` — see \`bring ls\`.`,
-					);
-					return EXIT.resolution;
-				case 'ambiguous':
-					console.error(
-						`\`${result.target}\` matches several remembered workspaces:\n`,
-					);
-					for (const path of result.candidates) {
-						console.error(`  ${path}`);
-					}
-					console.error('\nForget one by its full path.');
-					return EXIT.usage;
-			}
-			break;
+			return route.json ? reportForgetJson(result) : reportForget(result);
+		}
+		case 'inventory': {
+			return runInventory(route.section);
+		}
+		case 'prune': {
+			return runPrune(route);
 		}
 		case 'section': {
 			return runTui(route.section as Section);

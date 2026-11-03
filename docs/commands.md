@@ -173,6 +173,44 @@ cleared with it. An ambiguous name lists the matching paths and asks for
 the full one. In the TUI, `f` on a selected workspace does the same thing
 behind a confirmation.
 
+`--json` prints `{operation: "forget", outcome, workspace, workspaceName,
+message}` (or an `error`), with the same exit codes.
+
+### `bring containers --json` / `bring images --json`
+
+Without `--json` these open the TUI sections. With it they print the same
+inventory as one JSON document — what scripts and agents need to explain
+disk use without being able to change anything:
+
+- `containers`: `id`, `name`, `state`, `statusText`, `createdAt`, `imageId`,
+  `imageName`, `ports`, `workspacePath`, `workspaceName`, `role`
+  (`primary` | `service`), `serviceName` (Compose services).
+- `images`: `id`, `displayName`, `references`, `createdAt`, `sizeBytes`,
+  `dangling`, `usage` (`attached` | `base` | `unused`), `pruneCandidate`,
+  `containerNames`, `descendantContainerNames`, `workspacePaths`,
+  `workspaceNames`.
+
+### `bring images prune`
+
+Removes exactly what the TUI's `p` selects: Dev Container images that are
+**unused and unnamed** (dangling — typically left over from an old rebuild).
+Cached base images, named images, and pinned (digest-only) images are never
+picked; remove those one by one in the TUI. Attached images can never be
+removed, and Docker gets no `--force`.
+
+```sh
+bring images prune --dry-run   # list them and the most space it could free
+bring images prune             # list, then ask (terminal only)
+bring images prune --yes       # scripts: no prompt
+```
+
+Without `--yes` and without a terminal it changes nothing and exits 2.
+`--json` reports `candidates`, `upToBytes`, and `removedIds`. The size is an
+upper bound: layers shared with other images are not freed. With Docker's
+containerd image store (on by default in a fresh Docker Engine 29 install),
+a rebuild did not leave the replaced image behind in our testing, so there
+is often nothing to prune; the classic store does leave them.
+
 ## The full-screen interface
 
 Bare `bring` opens the TUI; `bring workspaces`, `bring containers`,
@@ -247,7 +285,8 @@ automatically.
 | `--verbose` | stream the underlying devcontainer/docker output live |
 | `--events` | up/rebuild/down/remove: progress as JSON lines (see below) |
 | `--config <path>` | use an explicit devcontainer.json (remembered) |
-| `--yes`, `-y` | skip the `remove` confirmation |
+| `--yes`, `-y` | skip the `remove` / `images prune` confirmation |
+| `--dry-run` | `images prune`: show what would be removed, change nothing |
 | `--no-cache` | rebuild without the Docker build cache |
 | `--timeout <seconds>` | exec: stop the command after N seconds (exit 124) |
 | `--detach` | exec: start in the background, print pid and stop command |

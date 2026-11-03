@@ -9,6 +9,7 @@ const DEFAULTS = {
 	clear: false,
 	detach: false,
 	events: false,
+	dryRun: false,
 };
 
 describe('parseArgv', () => {
@@ -29,8 +30,12 @@ describe('parseArgv', () => {
 		[['doctor', '--help'], { kind: 'help' }],
 		[['ls'], { kind: 'ls', json: false }],
 		[['ls', '--json'], { kind: 'ls', json: true }],
-		[['forget', 'api'], { kind: 'forget', target: 'api' }],
-		[['forget', '../api'], { kind: 'forget', target: '../api' }],
+		[['forget', 'api'], { kind: 'forget', target: 'api', json: false }],
+		[
+			['forget', 'api', '--json'],
+			{ kind: 'forget', target: 'api', json: true },
+		],
+		[['forget', '../api'], { kind: 'forget', target: '../api', json: false }],
 		[['workspaces'], { kind: 'section', section: 'workspaces' }],
 		[['containers'], { kind: 'section', section: 'containers' }],
 		[['images'], { kind: 'section', section: 'images' }],
@@ -206,6 +211,42 @@ describe('parseArgv — --events (Phase 4)', () => {
 		[['up', '--events', '--json'], 'conflict'],
 		[['status', '--events'], 'only applies to up'],
 		[['exec', '--events', '--', 'x'], 'only applies to up'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+});
+
+describe('parseArgv — inventory JSON and prune (Phase 4)', () => {
+	it.each([
+		[['containers'], { kind: 'section', section: 'containers' }],
+		[['images'], { kind: 'section', section: 'images' }],
+		[['containers', '--json'], { kind: 'inventory', section: 'containers' }],
+		[['images', '--json'], { kind: 'inventory', section: 'images' }],
+		[['profiles', '--json'], { kind: 'section', section: 'profiles' }],
+		[
+			['images', 'prune'],
+			{ kind: 'prune', json: false, yes: false, dryRun: false },
+		],
+		[
+			['images', 'prune', '--dry-run', '--json'],
+			{ kind: 'prune', json: true, yes: false, dryRun: true },
+		],
+		[
+			['images', 'prune', '-y'],
+			{ kind: 'prune', json: false, yes: true, dryRun: false },
+		],
+	])('routes %j', (argv, route) => {
+		expect(parseArgv(argv)).toEqual(route);
+	});
+
+	it.each([
+		[['images', 'prune', '--dry-run', '--yes'], 'conflict'],
+		[['images', 'prune', 'all'], 'Unexpected argument'],
+		[['images', 'foo'], 'except `prune`'],
+		[['up', '--dry-run'], 'only applies to `bring images prune`'],
 	])('rejects %j', (argv, fragment) => {
 		expect(parseArgv(argv)).toMatchObject({
 			kind: 'usage-error',

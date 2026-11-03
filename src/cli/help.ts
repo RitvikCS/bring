@@ -44,6 +44,10 @@ Global commands
   ls                           List known workspaces with live status
   forget <workspace>           Drop a workspace from Bring's memory
                                (containers, images, and files stay)
+  images prune                 Remove unused, unnamed Dev Container images
+                               (--dry-run to preview, --yes to confirm)
+  containers --json            List Dev Container containers as JSON
+  images --json                List Dev Container images as JSON
 
 Options
   --help, -h                   Show this help
@@ -53,7 +57,8 @@ Options
   --events                     up/rebuild/down/remove: print progress as
                                JSON lines, the last one is the result
   --config <path>              Use an explicit devcontainer.json
-  --yes, -y                    Skip the confirmation prompt (remove)
+  --yes, -y                    Skip the confirmation prompt (remove, prune)
+  --dry-run                    images prune: show what would be removed
   --no-cache                   Rebuild without the Docker build cache
   --timeout <seconds>          exec: stop the command after N seconds (exit 124)
   --detach                     exec: start in the background, print pid

@@ -31,6 +31,8 @@ export interface DirectOptions {
 	detach: boolean;
 	/** up/rebuild/down/remove: one JSON line per OperationEvent (NDJSON). */
 	events: boolean;
+	/** images prune: list what would be removed, change nothing. */
+	dryRun: boolean;
 }
 
 export type CliRoute =
@@ -39,8 +41,10 @@ export type CliRoute =
 	| { kind: 'tui' }
 	| { kind: 'doctor'; json: boolean }
 	| { kind: 'ls'; json: boolean }
-	| { kind: 'forget'; target: string }
+	| { kind: 'forget'; target: string; json: boolean }
 	| { kind: 'section'; section: string }
+	| { kind: 'inventory'; section: 'containers' | 'images' }
+	| { kind: 'prune'; json: boolean; yes: boolean; dryRun: boolean }
 	| {
 			kind: 'direct';
 			target: string;
@@ -88,6 +92,7 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		clear: false,
 		detach: false,
 		events: false,
+		dryRun: false,
 	};
 	if (shellCommand !== undefined) {
 		options.shellCommand = shellCommand;
@@ -124,6 +129,9 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				break;
 			case '--events':
 				options.events = true;
+				break;
+			case '--dry-run':
+				options.dryRun = true;
 				break;
 			case '--timeout': {
 				const value = head[i + 1];
@@ -213,12 +221,45 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				'`bring forget` needs exactly one workspace (a name from `bring ls` or a path).',
 			);
 		}
-		return { kind: 'forget', target: positionals[1] as string };
+		return {
+			kind: 'forget',
+			target: positionals[1] as string,
+			json: options.json,
+		};
+	}
+	if (first === 'images' && positionals[1] === 'prune') {
+		if (positionals.length !== 2) {
+			return usage(`Unexpected argument \`${positionals[2]}\`.`);
+		}
+		if (options.dryRun && options.yes) {
+			return usage(
+				'--dry-run and --yes conflict — preview or remove, not both.',
+			);
+		}
+		return {
+			kind: 'prune',
+			json: options.json,
+			yes: options.yes,
+			dryRun: options.dryRun,
+		};
 	}
 	if (SECTIONS.has(first)) {
-		return positionals.length === 1
-			? { kind: 'section', section: first }
-			: usage(`\`bring ${first}\` takes no arguments.`);
+		if (positionals.length !== 1) {
+			return usage(
+				first === 'images'
+					? `\`bring images\` takes no arguments except \`prune\`.`
+					: `\`bring ${first}\` takes no arguments.`,
+			);
+		}
+		// With --json the inventory sections answer directly instead of
+		// opening the TUI; without it nothing changes for humans.
+		if (options.json && (first === 'containers' || first === 'images')) {
+			return { kind: 'inventory', section: first };
+		}
+		return { kind: 'section', section: first };
+	}
+	if (options.dryRun) {
+		return usage('--dry-run only applies to `bring images prune`.');
 	}
 
 	// Rule 4: a leading action implies the `.` target.

@@ -24,6 +24,12 @@ follow [Semantic Versioning](https://semver.org/).
   same result `--json` prints. Raw build output is included only with
   `--verbose`. Lets a script or agent watch a long `bring up` instead of
   waiting blind.
+- `bring images prune`: remove unused, unnamed Dev Container images from a
+  script — exactly the set the TUI's `p` stages (no cached bases, no named
+  or pinned images, never attached ones, no `--force`). `--dry-run`
+  previews; without a terminal it needs `--yes`.
+- `--json` for `bring containers`, `bring images` (direct inventory instead
+  of the TUI section) and `bring forget`.
 
 ### Fixed
 
