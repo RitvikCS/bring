@@ -39,6 +39,11 @@ follow [Semantic Versioning](https://semver.org/).
 - `--json` for `bring containers`, `bring images` (direct inventory instead
   of the TUI section) and `bring forget`.
 
+### Changed
+
+- The bundled Dev Containers CLI is now 0.90.0 (was pinned to 0.87.x). A
+  system-wide `devcontainer` on PATH is still preferred when present.
+
 ### Fixed
 
 - `bring remove --json` without `--yes` no longer shows a y/N prompt on
