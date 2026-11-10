@@ -254,3 +254,38 @@ describe('parseArgv — inventory JSON and prune (Phase 4)', () => {
 		});
 	});
 });
+
+describe('parseArgv — forward (Phase 4)', () => {
+	it('takes ports after the action', () => {
+		expect(parseArgv(['forward', '5173', '8080:3000'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'forward',
+			options: { ...DEFAULTS, ports: ['5173', '8080:3000'] },
+		});
+		expect(parseArgv(['../api', 'forward', 'db:5432'])).toMatchObject({
+			target: '../api',
+			action: 'forward',
+			options: { ports: ['db:5432'] },
+		});
+	});
+
+	it('reads forwardPorts when no port is given', () => {
+		expect(parseArgv(['forward'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'forward',
+			options: { ...DEFAULTS },
+		});
+	});
+
+	it('rejects --json and still rejects extra args on other actions', () => {
+		expect(parseArgv(['forward', '--json'])).toMatchObject({
+			kind: 'usage-error',
+		});
+		expect(parseArgv(['up', 'now'])).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('Unexpected argument'),
+		});
+	});
+});

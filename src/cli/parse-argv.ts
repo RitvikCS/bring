@@ -8,6 +8,7 @@ export type DirectAction =
 	| 'rebuild'
 	| 'shell'
 	| 'exec'
+	| 'forward'
 	| 'logs'
 	| 'status'
 	| 'remove';
@@ -33,6 +34,8 @@ export interface DirectOptions {
 	events: boolean;
 	/** images prune: list what would be removed, change nothing. */
 	dryRun: boolean;
+	/** forward: explicit port specs (5173, 8080:3000, db:5432). */
+	ports?: string[];
 }
 
 export type CliRoute =
@@ -62,6 +65,7 @@ const ACTIONS = new Set<string>([
 	'rebuild',
 	'shell',
 	'exec',
+	'forward',
 	'logs',
 	'status',
 	'remove',
@@ -263,21 +267,31 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 	}
 
 	// Rule 4: a leading action implies the `.` target.
-	const [target, actionToken, extra] = ACTIONS.has(first)
-		? ['.', first, positionals[1]]
-		: [first, positionals[1], positionals[2]];
+	const leadingAction = ACTIONS.has(first);
+	const target = leadingAction ? '.' : first;
+	const actionToken = leadingAction ? first : positionals[1];
+	const rest = positionals.slice(leadingAction ? 1 : 2);
+	const extra = rest[0];
 
 	if (actionToken === undefined) {
 		return usage(
-			`Expected an action after \`${target}\` — one of: up, down, rebuild, shell, exec, logs, status, remove.`,
+			`Expected an action after \`${target}\` — one of: up, down, rebuild, shell, exec, forward, logs, status, remove.`,
 		);
 	}
 	if (!ACTIONS.has(actionToken)) {
 		return usage(
-			`\`${actionToken}\` is not an action. Try: up, down, rebuild, shell, exec, logs, status, remove.`,
+			`\`${actionToken}\` is not an action. Try: up, down, rebuild, shell, exec, forward, logs, status, remove.`,
 		);
 	}
-	if (extra !== undefined) {
+	if (actionToken === 'forward') {
+		// Ports follow the action: `bring forward 5173 8080:3000`.
+		if (rest.length > 0) {
+			options.ports = rest as string[];
+		}
+		if (options.json) {
+			return usage('--json does not apply to forward — it runs until Ctrl+C.');
+		}
+	} else if (extra !== undefined) {
 		return usage(`Unexpected argument \`${extra}\`.`);
 	}
 

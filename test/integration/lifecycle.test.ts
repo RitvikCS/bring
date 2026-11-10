@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import {
 	cpSync,
 	mkdtempSync,
@@ -5,6 +6,7 @@ import {
 	realpathSync,
 	rmSync,
 } from 'node:fs';
+import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -17,6 +19,10 @@ import {
 	execCommand,
 	startDetached,
 } from '../../src/application/exec-command.js';
+import {
+	bridgeArgv,
+	startForwarding,
+} from '../../src/application/forward-ports.js';
 import { getSnapshot } from '../../src/application/get-status.js';
 import { removeImageResources } from '../../src/application/image-actions.js';
 import { listResources } from '../../src/application/list-resources.js';
@@ -387,3 +393,73 @@ describe.runIf(RUN)('exec against a real container (Phase 4)', () => {
 		5 * MINUTES,
 	);
 });
+
+describe.runIf(RUN)('forward into a real container (Phase 4)', () => {
+	it(
+		'reaches a server bound to 127.0.0.1 inside the container, and leaves no bridges behind',
+		async () => {
+			const project = prepare('minimal');
+			const { ctx, ref } = project;
+			expect(
+				(await bringUp(ctx, ref, { config: ref.configPath })).outcome,
+			).toBe('success');
+			const server = await startDetached(ctx, ref, [
+				'perl',
+				'-MIO::Socket::INET',
+				'-e',
+				'my $s=IO::Socket::INET->new(LocalAddr=>"127.0.0.1",LocalPort=>5173,Listen=>5,ReuseAddr=>1) or die; while(my $c=$s->accept){ while(<$c>){ last if /^\r?\n$/ } print $c "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"; close $c }',
+			]);
+			expect(server.outcome).toBe('success');
+			const containerId = await primaryId(ctx.dockerExe, ref.rootPath);
+
+			const probe = createNetServer();
+			await new Promise<void>((resolve) =>
+				probe.listen(0, '127.0.0.1', resolve),
+			);
+			const hostPort = (probe.address() as AddressInfo).port;
+			await new Promise((resolve) => probe.close(resolve));
+
+			const forwarding = await startForwarding({
+				specs: [{ hostPort, targetHost: '127.0.0.1', targetPort: 5173 }],
+				openBridge: async (spec) =>
+					spawn(ctx.dockerExe, [
+						'exec',
+						'-i',
+						containerId,
+						...bridgeArgv('bash', spec.targetHost, spec.targetPort),
+					]),
+				onEvent: () => {},
+			});
+			try {
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				for (let i = 0; i < 3; i++) {
+					const res = await fetch(`http://127.0.0.1:${hostPort}/`);
+					expect(await res.text()).toBe('ok');
+				}
+			} finally {
+				await forwarding.close();
+			}
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			const left = await execCommand(ctx, ref, [
+				'sh',
+				'-c',
+				'for p in /proc/[0-9]*; do tr "\\0" " " < $p/cmdline 2>/dev/null; echo; done | grep -c "^[b]ash -c exec 3" || true',
+			]);
+			expect(left.stdout.trim()).toBe('0');
+		},
+		5 * MINUTES,
+	);
+});
+
+async function primaryId(dockerExe: string, root: string): Promise<string> {
+	const run = await runCommand(dockerExe, [
+		'ps',
+		'-q',
+		'--filter',
+		`label=devcontainer.local_folder=${root}`,
+	]);
+	if (run.outcome !== 'ran') {
+		throw new Error('docker ps failed');
+	}
+	return run.result.stdout.trim().split('\n')[0] as string;
+}

@@ -42,6 +42,7 @@ import { statusColor, statusLabel, statusSymbol } from '../tui/state.js';
 import { type AnsiCode, makePaint } from './ansi.js';
 import { EXIT } from './exit-codes.js';
 import type { CliRoute } from './parse-argv.js';
+import { runForwardRoute } from './run-forward.js';
 
 type DirectRoute = Extract<CliRoute, { kind: 'direct' }>;
 
@@ -125,6 +126,10 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 		}
 		console.error(leftShellLine(name, color, result.childExitCode));
 		return result.childExitCode ?? EXIT.success;
+	}
+
+	if (route.action === 'forward') {
+		return runForwardRoute(ctx, workspace, route.options.ports, paint);
 	}
 
 	if (route.action === 'exec') {

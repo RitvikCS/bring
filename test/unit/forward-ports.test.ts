@@ -1,0 +1,235 @@
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
+import { type AddressInfo, createServer as createNetServer } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+	bridgeArgv,
+	explainConnectionFailure,
+	type ForwardEvent,
+	type Forwarding,
+	type ForwardSpec,
+	type Helper,
+	parsePortSpec,
+	startForwarding,
+} from '../../src/application/forward-ports.js';
+
+describe('parsePortSpec', () => {
+	it.each([
+		[5173, { hostPort: 5173, targetHost: '127.0.0.1', targetPort: 5173 }],
+		['5173', { hostPort: 5173, targetHost: '127.0.0.1', targetPort: 5173 }],
+		[
+			'8080:3000',
+			{ hostPort: 8080, targetHost: '127.0.0.1', targetPort: 3000 },
+		],
+		['db:5432', { hostPort: 5432, targetHost: 'db', targetPort: 5432 }],
+		['15432:db:5432', { hostPort: 15432, targetHost: 'db', targetPort: 5432 }],
+	])('parses %j', (token, spec) => {
+		expect(parsePortSpec(token)).toEqual(spec);
+	});
+
+	it.each([
+		['0'],
+		['70000'],
+		['abc'],
+		['1:2:3:4'],
+		['db:'],
+		['-1'],
+		['a b:80'],
+		['$(x):80'],
+	])('rejects %j', (token) => {
+		expect(parsePortSpec(token)).toHaveProperty('error');
+	});
+});
+
+describe('explainConnectionFailure', () => {
+	const spec: ForwardSpec = {
+		hostPort: 1,
+		targetHost: '127.0.0.1',
+		targetPort: 5173,
+	};
+	it('turns refused connections into a "not up yet" line', () => {
+		expect(
+			explainConnectionFailure(
+				'bash: connect: Connection refused',
+				spec,
+				'api',
+			),
+		).toBe('nothing is listening on port 5173 inside api yet');
+	});
+	it('explains a replaced container after a rebuild', () => {
+		expect(
+			explainConnectionFailure(
+				'Error response from daemon: No such container: abc',
+				spec,
+				'api',
+			),
+		).toContain('replaced or removed');
+	});
+	it('recognises a stopped container', () => {
+		expect(
+			explainConnectionFailure(
+				'Error response from daemon: container abc is not running',
+				spec,
+				'api',
+			),
+		).toBe('api is not running');
+	});
+});
+
+// The bridges below run for real on this machine — the same argv bring runs
+// inside the container, minus `docker exec -i <id>`. Detached, because the
+// bash bridge ends with `kill 0` (its own process group, as under exec).
+async function hasCommand(name: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const child = spawn('sh', ['-c', `command -v ${name}`]);
+		child.on('close', (code) => resolve(code === 0));
+	});
+}
+
+const open: Forwarding[] = [];
+const servers: Server[] = [];
+afterEach(async () => {
+	for (const f of open.splice(0)) {
+		await f.close();
+	}
+	for (const s of servers.splice(0)) {
+		s.close();
+	}
+});
+
+async function httpServer(body: string, host = '127.0.0.1'): Promise<number> {
+	const server = createServer((_req, res) => {
+		res.end(body);
+	});
+	servers.push(server);
+	await new Promise<void>((resolve) => server.listen(0, host, resolve));
+	return (server.address() as AddressInfo).port;
+}
+
+async function freePort(): Promise<number> {
+	const probe = createNetServer();
+	await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+	const { port } = probe.address() as AddressInfo;
+	await new Promise((resolve) => probe.close(resolve));
+	return port;
+}
+
+function localBridge(helper: Helper) {
+	const spawned: ChildProcessWithoutNullStreams[] = [];
+	const openBridge = async (spec: ForwardSpec) => {
+		const [cmd, ...args] = bridgeArgv(helper, spec.targetHost, spec.targetPort);
+		const child = spawn(cmd as string, args, { detached: true });
+		spawned.push(child);
+		return child;
+	};
+	return { openBridge, spawned };
+}
+
+async function forward(
+	helper: Helper,
+	targetPort: number,
+	events: ForwardEvent[] = [],
+) {
+	const hostPort = await freePort();
+	const bridge = localBridge(helper);
+	const f = await startForwarding({
+		specs: [{ hostPort, targetHost: '127.0.0.1', targetPort }],
+		openBridge: bridge.openBridge,
+		onEvent: (e) => events.push(e),
+		bridgeGraceMs: 300,
+	});
+	open.push(f);
+	return { hostPort, bridge, f, events };
+}
+
+const exited = (child: ChildProcessWithoutNullStreams) =>
+	child.exitCode !== null || child.signalCode !== null;
+
+describe.each([
+	'bash',
+	'node',
+] as const)('startForwarding via the %s bridge', (helper) => {
+	it('serves HTTP through the bridge and the bridge exits afterwards', async () => {
+		if (!(await hasCommand(helper))) return;
+		const target = await httpServer('hello from the container');
+		const { hostPort, bridge } = await forward(helper, target);
+		for (let i = 0; i < 3; i++) {
+			const res = await fetch(`http://127.0.0.1:${hostPort}/`, {
+				headers: { connection: 'close' },
+			});
+			expect(await res.text()).toBe('hello from the container');
+		}
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		expect(bridge.spawned.length).toBeGreaterThanOrEqual(3);
+		expect(bridge.spawned.every(exited)).toBe(true);
+	});
+
+	it('reports a refused connection without stopping the forwarder', async () => {
+		if (!(await hasCommand(helper))) return;
+		const dead = await freePort();
+		const { hostPort, events } = await forward(helper, dead);
+		await fetch(`http://127.0.0.1:${hostPort}/`).catch(() => undefined);
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		const failed = events.find((e) => e.type === 'connection-failed');
+		expect(failed?.type === 'connection-failed' && failed.message).toMatch(
+			/refused/i,
+		);
+	});
+});
+
+describe('startForwarding', () => {
+	it('binds 127.0.0.1 only', async () => {
+		const target = await httpServer('x');
+		const { f } = await forward('node', target);
+		expect(f.listening).toHaveLength(1);
+		const res = await fetch(`http://127.0.0.1:${f.listening[0]?.hostPort}/`);
+		expect(await res.text()).toBe('x');
+		// Not reachable on any other interface address of this machine.
+		const { networkInterfaces } = await import('node:os');
+		const external = Object.values(networkInterfaces())
+			.flat()
+			.find((i) => i && i.family === 'IPv4' && !i.internal);
+		if (external) {
+			await expect(
+				fetch(`http://${external.address}:${f.listening[0]?.hostPort}/`, {
+					signal: AbortSignal.timeout(1000),
+				}),
+			).rejects.toThrow();
+		}
+	});
+
+	it('skips a port that is taken and keeps the others', async () => {
+		const taken = await httpServer('occupant');
+		const target = await httpServer('ok');
+		const free = await freePort();
+		const events: ForwardEvent[] = [];
+		const f = await startForwarding({
+			specs: [
+				{ hostPort: taken, targetHost: '127.0.0.1', targetPort: target },
+				{ hostPort: free, targetHost: '127.0.0.1', targetPort: target },
+			],
+			openBridge: localBridge('node').openBridge,
+			onEvent: (e) => events.push(e),
+		});
+		open.push(f);
+		expect(events[0]).toMatchObject({
+			type: 'listen-failed',
+			code: 'EADDRINUSE',
+		});
+		expect(f.listening.map((s) => s.hostPort)).toEqual([free]);
+	});
+
+	it('closes cleanly with a connection still open', async () => {
+		const target = await httpServer('x');
+		const { hostPort, bridge, f } = await forward('node', target);
+		const { connect } = await import('node:net');
+		const socket = connect(hostPort, '127.0.0.1');
+		await new Promise((resolve) => socket.once('connect', resolve));
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		await f.close();
+		open.splice(open.indexOf(f), 1);
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		expect(bridge.spawned.every(exited)).toBe(true);
+		socket.destroy();
+	});
+});
