@@ -41,8 +41,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The bundled Dev Containers CLI is now 0.90.0 (was pinned to 0.87.x). A
-  system-wide `devcontainer` on PATH is still preferred when present.
+- The bundled Dev Containers CLI is no longer pinned to 0.87.x: Bring now
+  accepts any 0.x release from 0.90.0 on, so a fresh install gets upstream
+  fixes without waiting for a Bring release. The real-container tests now
+  run in CI on every pull request and weekly against the latest upstream
+  CLI. A system-wide `devcontainer` on PATH is still preferred when present.
 
 ### Fixed
 
