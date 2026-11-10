@@ -210,6 +210,18 @@ export type ForwardEvent =
  */
 export const MAX_BRIDGES = 48;
 
+/**
+ * How many bridges fit under this process's file-handle limit (`ulimit
+ * -n`): each takes about four, plus one per waiting connection, plus what
+ * Bring itself holds. Never above MAX_BRIDGES, never below 2.
+ */
+export function bridgesForFileLimit(limit: number | undefined): number {
+	if (limit === undefined || !Number.isFinite(limit)) {
+		return MAX_BRIDGES;
+	}
+	return Math.max(2, Math.min(MAX_BRIDGES, Math.floor((limit - 40) / 6)));
+}
+
 export interface ForwardOptions {
 	specs: readonly ForwardSpec[];
 	/** Start one bridge for one accepted connection — use `spawnBridge`. */
@@ -240,12 +252,13 @@ export async function startForwarding(
 	const bridges = new Set<ChildProcessWithoutNullStreams>();
 	const sockets = new Set<Socket>();
 	const grace = options.bridgeGraceMs ?? (BRIDGE_LINGER_SECONDS + 2) * 1000;
-	const maxBridges = options.maxBridges ?? MAX_BRIDGES;
+	// Lowered at run time if spawning hits the file-handle limit anyway.
+	let cap = options.maxBridges ?? MAX_BRIDGES;
 	let active = 0;
 	const waiting: (() => void)[] = [];
 	const release = () => {
 		active--;
-		while (active < maxBridges && waiting.length > 0) {
+		while (active < cap && waiting.length > 0) {
 			(waiting.shift() as () => void)();
 		}
 	};
@@ -275,6 +288,18 @@ export async function startForwarding(
 						? new Error('the bridge process could not be started')
 						: undefined);
 				if (early !== undefined) {
+					const code = (early as NodeJS.ErrnoException).code;
+					const outOfHandles =
+						code === 'EMFILE' || code === 'ENFILE' || code === 'EAGAIN';
+					if (outOfHandles && active > 1 && !socket.destroyed) {
+						// The machine cannot hold this many bridges: remember
+						// the ceiling and let this connection wait for a free
+						// one instead of dropping it.
+						cap = Math.max(1, active - 1);
+						waiting.unshift(() => bridge(spec, socket));
+						done();
+						return;
+					}
 					failed(early.message);
 					return;
 				}
@@ -327,7 +352,7 @@ export async function startForwarding(
 		socket.on('close', () => sockets.delete(socket));
 		socket.on('error', () => {});
 		socket.pause();
-		if (active >= maxBridges) {
+		if (active >= cap) {
 			waiting.push(() => bridge(spec, socket));
 		} else {
 			bridge(spec, socket);
@@ -398,6 +423,9 @@ export function explainConnectionFailure(
 		spec.targetHost === '127.0.0.1'
 			? `port ${spec.targetPort}`
 			: `${spec.targetHost}:${spec.targetPort}`;
+	if (/EMFILE|ENFILE/.test(message)) {
+		return 'this machine ran out of file handles for new connections (see `ulimit -n`)';
+	}
 	if (/refused/i.test(message)) {
 		return `nothing is listening on ${target} inside ${workspaceName} yet`;
 	}

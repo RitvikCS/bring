@@ -396,8 +396,10 @@ export async function startDetached(
 					containerLogPath: parsed.logPath,
 					tailCommand: `bring ${target} exec -- tail -n 100 ${parsed.logPath}`,
 				}),
-		// Without setsid the pid is not a group leader: stop the pid alone.
-		stopCommand: `bring ${target} exec -- kill -15 ${parsed.noSetsid ? '' : '-'}${parsed.pid}`,
+		// Through `sh -c`: `kill` is a shell builtin, and slim images have
+		// no kill binary for exec to run. Without setsid the pid is not a
+		// group leader, so only the pid itself can be stopped.
+		stopCommand: `bring ${target} exec -- sh -c 'kill -15 ${parsed.noSetsid ? '' : '-'}${parsed.pid}'`,
 		warnings,
 	};
 }

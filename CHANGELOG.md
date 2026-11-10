@@ -18,15 +18,17 @@ follow [Semantic Versioning](https://semver.org/).
   container.
 - `bring exec -- <cmd>`: run one command inside a running workspace without
   taking over the terminal — for scripts, CI, and coding agents. Output
-  streams live (Bring's summary goes to stderr), and Bring exits with the
-  command's own exit code. `--json` returns the command, exit code, and the
-  last 16 KiB of stdout/stderr in one document. `--timeout <seconds>` stops
-  the command and exits 124 (new error code `COMMAND_TIMEOUT`). `--detach`
-  starts servers in the background and prints the pid plus the exact stop
-  command. Timeouts and Ctrl+C stop the whole process tree *inside* the
-  container — plain `devcontainer exec`/`docker exec` leave it running.
-  Each run's full output is kept under `logs/<workspace>/exec/` (last 20),
-  separate from the `up`/`rebuild` log that `bring logs` shows.
+  passes through byte for byte (Bring's summary goes to stderr), and Bring
+  exits with the command's own exit code. `--json` returns the command,
+  exit code, and the last 16 KiB of stdout/stderr in one document.
+  `--timeout <seconds>` stops the command and exits 124 (new error code
+  `COMMAND_TIMEOUT`). `--detach` starts servers in the background and prints
+  the pid plus the exact stop command. A timeout, Ctrl+C, or a closed output
+  pipe stops every process the command started *inside* the container —
+  plain `devcontainer exec`/`docker exec` leave them running. Each run's
+  output is kept under `logs/<workspace>/exec/` (last 20, 32 MiB each),
+  separate from the `up`/`rebuild` log that `bring logs` shows; a detached
+  command logs inside the container instead.
 - `--events` for `up`, `rebuild`, `down`, `remove`: progress as one JSON
   object per line on stdout, ending with a `completed` line that carries the
   same result `--json` prints. Raw build output is included only with
@@ -40,6 +42,10 @@ follow [Semantic Versioning](https://semver.org/).
   of the TUI section) and `bring forget`.
 
 ### Changed
+
+- `exec` and `forward` are now actions, so a workspace folder literally
+  named `exec` or `forward` must be addressed as a path (`bring ./exec up`)
+  — the same rule that already applies to folders named `up`, `shell`, etc.
 
 - The bundled Dev Containers CLI is no longer pinned to 0.87.x: Bring now
   accepts any 0.x release from 0.90.0 on, so a fresh install gets upstream

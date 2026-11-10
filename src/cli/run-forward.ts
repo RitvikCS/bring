@@ -4,6 +4,7 @@ import { runCommand } from '../adapters/process-runner.js';
 import type { OperationContext } from '../application/context.js';
 import {
 	bridgeArgv,
+	bridgesForFileLimit,
 	describeSpec,
 	explainConnectionFailure,
 	type ForwardSpec,
@@ -118,6 +119,7 @@ export async function runForwardRoute(
 
 	const forwarding = await startForwarding({
 		specs,
+		maxBridges: bridgesForFileLimit(await fileHandleLimit()),
 		openBridge: async (spec) => {
 			if (containerId === null) {
 				const found = await primaryContainer(ctx, workspace);
@@ -198,6 +200,16 @@ export async function runForwardRoute(
 	await forwarding.close();
 	console.log('Stopped forwarding.');
 	return EXIT.success;
+}
+
+/** This process's `ulimit -n`, when a POSIX shell can tell us. */
+async function fileHandleLimit(): Promise<number | undefined> {
+	const run = await runCommand('sh', ['-c', 'ulimit -n'], {});
+	if (run.outcome !== 'ran' || run.result.exitCode !== 0) {
+		return undefined;
+	}
+	const limit = Number(run.result.stdout.trim());
+	return Number.isInteger(limit) && limit > 0 ? limit : undefined;
 }
 
 /** The running primary container of the workspace, by label. */

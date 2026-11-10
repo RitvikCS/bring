@@ -5,7 +5,7 @@ short version of this; inside the TUI, `?` shows the keyboard reference.
 
 ```
 bring [target] <action> [options]   # one operation, directly
-bring <global-command>              # doctor · ls
+bring <global-command>              # doctor · ls · forget · images prune
 bring [section]                     # the full-screen interface
 ```
 
@@ -66,7 +66,7 @@ workspace must be running (`bring up` first).
 
 Runs one command inside the running container without taking over your
 terminal — for scripts, CI steps, and coding agents. Everything after `--`
-is the command, passed as-is (no shell; use `-- sh -c '…'` for pipes):
+is the command:
 
 ```sh
 bring exec -- npm test
@@ -74,24 +74,34 @@ bring ../api exec --timeout 300 -- pytest -x
 bring exec --json -- sh -c 'cat package.json | head -5'
 ```
 
-- The command's stdout and stderr stream live to yours; Bring's one-line
-  summary goes to **stderr**, so `bring exec -- cat out.json > out.json`
+- The command is run directly, not through a shell. Pipes, `&&`, `cd`, and
+  other shell builtins (`kill`, `export`…) need `-- sh -c '…'`.
+- Its stdout and stderr pass through byte for byte, live; Bring's one-line
+  summary goes to **stderr**. So `bring exec -- cat data.bin > data.bin`
   gives you exactly the file.
 - **Exit code**: when the command ran, Bring exits with *the command's own*
-  exit code, so `bring exec -- npm test && deploy` works. When Bring could
-  not run it (workspace not running, Docker down), Bring's own codes
-  apply. A command that itself exits 3 therefore looks like a resolution
-  failure; if you must tell them apart, use `--json` and read `outcome` /
-  `error.code` vs `exitCode`.
-- `--timeout <seconds>` stops the command — and everything it started
-  inside the container — and exits **124**.
-- Ctrl+C stops the command inside the container too (exit 130). Plain
-  `docker exec`/`devcontainer exec` leave it running.
-- No TTY and no stdin: use `bring shell -- <cmd>` for anything interactive.
+  exit code, so `bring exec -- npm test && deploy` works. A command that
+  does not exist exits 127, with a hint. When Bring could not run it
+  (workspace not running, Docker down), Bring's own codes apply. A command
+  that itself exits 3 therefore looks like a resolution failure; if you
+  must tell them apart, use `--json` and read `outcome` / `error.code` vs
+  `exitCode`.
+- `--timeout <seconds>` (1 to 2147483) stops the command and every process
+  it started inside the container — also ones that moved to their own
+  process group — and exits **124**.
+- Ctrl+C stops the command inside the container too (exit 130), and so does
+  closing its output (`bring exec -- … | head -1`). Plain `docker exec` and
+  `devcontainer exec` leave it running.
+- No terminal and no input: the command gets no TTY and no stdin, and Bring
+  never prompts. Use `bring shell -- <cmd>` for anything interactive.
 - The workspace must be running; `exec` never starts it.
-- The full output of each run is saved under Bring's state directory
-  (`logs/<workspace>/exec/`, last 20 kept) and its path is printed on
-  failure. `bring logs` keeps showing the last `up`/`rebuild` log.
+- Each run's output is saved under Bring's state directory
+  (`logs/<workspace>/exec/`, last 20 runs kept, each capped at 32 MiB with
+  the end of the output preserved) and the path is printed on failure.
+  `bring logs` keeps showing the last `up`/`rebuild` log; `bring logs
+  --clear` deletes the exec logs too.
+- Bring finds the command's processes through an environment variable it
+  sets for them, `BRING_EXEC_ID`. Nothing is written inside the container.
 
 `--json` prints one document instead of streaming:
 
@@ -103,30 +113,43 @@ bring exec --json -- sh -c 'cat package.json | head -5'
   "durationMs": 4210, "containerIds": ["…"],
   "message": "npm test exited with code 1",
   "command": ["npm", "test"],
-  "exitCode": 1,                   // the command's code (absent if it never ran)
+  "exitCode": 1,                   // the command's code; absent on failed/interrupted
   "stdout": "…", "stderr": "…",    // last 16 KiB of each
   "truncated": { "stdout": false, "stderr": true },
-  "logPath": "…/exec/….log",
-  "error": { "code": "COMMAND_TIMEOUT", "summary": "…" }  // only on failure
+  "logPath": "…/exec/….log",       // absent if the log could not be written
+  "error": { "code": "COMMAND_TIMEOUT", "summary": "…" }  // failed/interrupted only
 }
 ```
+
+`outcome: "success"` with `exitCode: 1` is the normal "tests failed" case:
+Bring did its job, so there is no `error`.
 
 #### `--detach`: servers
 
 `bring exec --detach -- npm run dev` starts the command in the background
 inside the container and returns at once with its pid, where its output
-goes, and the exact command that stops it (and every child it spawned):
+goes, and the exact command that stops it and every child it spawned
+(printed on stderr):
 
 ```
-✓ started npm run dev in api (pid 559)
+✓ started npm run dev in api (pid 559)               0.9s
   Output: bring . exec -- tail -n 100 /tmp/bring-detached-3f2a….log
-  Stop:   bring . exec -- kill -15 -559
+  Stop:   bring . exec -- sh -c 'kill -15 -559'
 ```
 
 With `--json` the same appears as `pid`, `containerLogPath`, `tailCommand`,
-`stopCommand`, and `warnings`. Bring does not keep track of detached
-processes; `bring down` stops everything anyway. To open the server from
-your machine, see `bring forward`.
+`stopCommand`, and `warnings`. A command that does not exist in the
+container fails at once (exit 1). Possible warnings:
+
+| Warning | Meaning |
+| ------- | ------- |
+| `DETACH_NO_SETSID` | no `setsid` in the container: the stop command stops the command itself, not its children |
+| `DETACH_NO_LOG` | no writable place for the log (`$TMPDIR`, `/tmp`, `/dev/shm`, `$HOME` were tried): the output is discarded, and `containerLogPath`/`tailCommand` are absent |
+| `DETACH_EXITED` | the command was already gone 0.3 s after starting — it probably failed; check its output |
+
+The log lives inside the container, not in Bring's state directory. Bring
+does not keep track of detached processes; `bring down` stops everything
+anyway. To open the server from your machine, see `bring forward`.
 
 ### `bring forward`
 
@@ -168,8 +191,19 @@ your project or container.
   Alpine image add it (`apk add bash`).
 - Each new connection costs roughly 0.1 s to set up; data then flows at
   full speed. Pages that open many connections at once load a little slower
-  than through a published port.
+  than through a published port. At most 48 connections are bridged at the
+  same time; further ones wait their turn.
+- A client that finishes sending and then waits for the answer (`printf … |
+  nc`) gets whatever the server sends in the next 3 s with the bash helper
+  (with node: until the server has been silent for 3 s; with socat: 0.5 s);
+  then the connection is closed. With the bash helper, a server that only
+  answers once it sees the client's end-of-input never answers — node and
+  socat pass the end-of-input on. Browsers and curl are not affected.
 - Not supported: `--json`, UDP, and the labels in `portsAttributes`.
+- Exit codes: 0 after Ctrl+C; 1 if the workspace is not running, its
+  configuration cannot be read, or no port could be opened; 2 for a port
+  that makes no sense or no ports at all; 4 if the container has none of
+  bash, node, socat.
 
 Starting the server from a script or agent? Pair it with
 `bring exec --detach -- npm run dev`.
@@ -219,14 +253,20 @@ cleared with it. An ambiguous name lists the matching paths and asks for
 the full one. In the TUI, `f` on a selected workspace does the same thing
 behind a confirmation.
 
-`--json` prints `{operation: "forget", outcome, workspace, workspaceName,
-message}` (or an `error`), with the same exit codes.
+`--json` prints `{schemaVersion, operation: "forget", outcome, message}`,
+plus `workspace` and `workspaceName` on success, `error` on failure, and
+`candidates` when the name is ambiguous. Exit codes are the same as without
+`--json` (3 not found, 2 ambiguous).
 
 ### `bring containers --json` / `bring images --json`
 
 Without `--json` these open the TUI sections. With it they print the same
-inventory as one JSON document — what scripts and agents need to explain
-disk use without being able to change anything:
+inventory as one JSON document — `{schemaVersion, refreshedAt, containers}`
+or `{schemaVersion, refreshedAt, images}` — which is what scripts and agents
+need to explain disk use without being able to change anything. If Docker
+is missing or not answering, the document is `{schemaVersion, outcome:
+"failed", error}` and the exit code is 4 (not installed) or 1 (not
+answering). Each entry has:
 
 - `containers`: `id`, `name`, `state`, `statusText`, `createdAt`, `imageId`,
   `imageName`, `ports`, `workspacePath`, `workspaceName`, `role`
@@ -250,12 +290,16 @@ bring images prune             # list, then ask (terminal only)
 bring images prune --yes       # scripts: no prompt
 ```
 
-Without `--yes` and without a terminal it changes nothing and exits 2.
-`--json` reports `candidates`, `upToBytes`, and `removedIds`. The size is an
-upper bound: layers shared with other images are not freed. With Docker's
-containerd image store (on by default in a fresh Docker Engine 29 install),
-a rebuild did not leave the replaced image behind in our testing, so there
-is often nothing to prune; the classic store does leave them.
+Without `--yes` it asks first in a terminal; where it cannot ask (no
+terminal, or `--json`) it changes nothing and exits 2. `--dry-run` and
+`--yes` together are a usage error. `--json` prints `{schemaVersion,
+operation: "prune", dryRun, candidates: [{id, displayName, sizeBytes}],
+upToBytes, outcome, message}`, plus `removedIds` after a removal and `error`
+on failure. The size is an upper bound: layers shared with other images are
+not freed. With Docker's containerd image store (the default on a fresh
+Docker Engine 29 install), a rebuild did not leave the replaced image behind
+in our testing, so there is often nothing to prune; the classic store does
+leave them.
 
 ## The full-screen interface
 
@@ -361,8 +405,10 @@ bring up --events
   `running-hooks`, `stopping`, `removing`, `ready`.
 - The last line is always `type: "completed"`, and its `result` is exactly
   what `--json` would print. Wait for it; its `outcome` and the exit code
-  tell you how it went. A target that cannot be resolved still produces a
-  single `completed` line.
+  tell you how it went. A run that ends before the operation starts —
+  the target cannot be resolved, Docker is missing, `remove` lacks `--yes`,
+  a dotfiles profile needs choosing — still prints a single `completed`
+  line, whose `result` holds just `outcome: "failed"` and the `error`.
 - With `--verbose`, raw build output arrives as `type: "output"` lines
   (`stream`, `chunk`). Without it they are left out — build logs are big.
 - Like `--json`, it never prompts: `remove` needs `--yes`, and a dotfiles

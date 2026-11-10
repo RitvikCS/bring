@@ -7,7 +7,7 @@ export function helpText(version: string): string {
 
 Usage
   bring [target] <action>      Run one operation directly
-  bring <global-command>       doctor · ls
+  bring <global-command>       doctor · ls · forget · images prune
   bring                        Open the full-screen interface
 
 TUI sections
@@ -26,13 +26,15 @@ Actions
   down                         Stop it, keeping containers for a fast restart
   rebuild                      Rebuild the environment (--no-cache supported)
   shell                        Open a shell inside it (-- <cmd> to override)
-  exec -- <cmd>                Run one command inside it, non-interactively;
-                               exits with the command's own exit code
+  exec -- <cmd>                Run one command inside it: no terminal, no
+                               input, never prompts; exits with the
+                               command's own exit code
                                (--json, --timeout <s>, --detach)
   forward [ports…]             Reach servers in the container from this
                                machine until Ctrl+C. No ports: uses
                                forwardPorts from devcontainer.json
-  logs                         Show the last captured operation log (--clear)
+  logs                         Show the last captured operation log
+                               (--clear deletes it and the exec logs)
   status                       Show a one-workspace status summary
   remove                       Stop and DELETE devcontainer resources
                                (asks first; source files are never touched)

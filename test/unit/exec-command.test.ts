@@ -330,7 +330,7 @@ describe('startDetached', () => {
 			pid: 559,
 			containerLogPath: '/tmp/bring-detached-abc.log',
 			tailCommand: 'bring . exec -- tail -n 100 /tmp/bring-detached-abc.log',
-			stopCommand: 'bring . exec -- kill -15 -559',
+			stopCommand: "bring . exec -- sh -c 'kill -15 -559'",
 			warnings: [],
 			message: `started npm run dev in ${result.workspaceName} (pid 559)`,
 		});
@@ -347,7 +347,7 @@ describe('startDetached', () => {
 			['srv'],
 		);
 		expect(result.stopCommand).toBe(
-			"bring 'rb link; echo PWNED' exec -- kill -15 -7",
+			"bring 'rb link; echo PWNED' exec -- sh -c 'kill -15 -7'",
 		);
 		expect(result.tailCommand).toBe(
 			"bring 'rb link; echo PWNED' exec -- tail -n 100 /tmp/l.log",
@@ -361,7 +361,7 @@ describe('startDetached', () => {
 				'echo "bring:log=/tmp/l.log"\necho bring:no-setsid\necho "bring:pid=42"',
 		});
 		const result = await startDetached(h.ctx, h.workspace, ['srv']);
-		expect(result.stopCommand).toBe('bring . exec -- kill -15 42');
+		expect(result.stopCommand).toBe("bring . exec -- sh -c 'kill -15 42'");
 		expect(result.warnings).toEqual(['DETACH_NO_SETSID']);
 	});
 
@@ -606,13 +606,13 @@ describe('exec output and exit codes', () => {
 			containerIds: [],
 			command: ['srv'],
 			pid: 9,
-			stopCommand: 'bring . exec -- kill -15 -9',
+			stopCommand: "bring . exec -- sh -c 'kill -15 -9'",
 			warnings: ['DETACH_NO_LOG'],
 		};
 		expect(detachExtras(detached)).toEqual({
 			command: ['srv'],
 			pid: 9,
-			stopCommand: 'bring . exec -- kill -15 -9',
+			stopCommand: "bring . exec -- sh -c 'kill -15 -9'",
 			warnings: ['DETACH_NO_LOG'],
 		});
 	});

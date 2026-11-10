@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
 	cpSync,
+	existsSync,
 	mkdtempSync,
 	readdirSync,
 	realpathSync,
@@ -345,6 +346,9 @@ describe.runIf(RUN)('exec against a real container (Phase 4)', () => {
 			'-c',
 			`for p in /proc/[0-9]*; do tr "\\0" " " < $p/cmdline 2>/dev/null; echo; done | grep -c "${pattern}" || true`,
 		]);
+		// A failed count must fail the test, not read as "0 left".
+		expect(result).toMatchObject({ outcome: 'success', exitCode: 0 });
+		expect(result.stdout.trim()).toMatch(/^\d+$/);
 		return Number(result.stdout.trim());
 	};
 
@@ -368,12 +372,13 @@ describe.runIf(RUN)('exec against a real container (Phase 4)', () => {
 				stderr: 'err\n',
 			});
 
-			// Killing the host-side exec alone would leave both sleeps running
-			// in the container (verified 2026-11-03); the group kill must not.
+			// Killing the host-side exec alone would leave these running in
+			// the container (verified 2026-11-03) — including the one that
+			// moves to its own session, which a process-group kill misses.
 			const timedOut = await execCommand(
 				ctx,
 				ref,
-				['sh', '-c', 'sleep 71 & sleep 72'],
+				['sh', '-c', 'setsid sleep 71 & sleep 72'],
 				{ timeoutMs: 2000 },
 			);
 			expect(timedOut.problem?.code).toBe('COMMAND_TIMEOUT');
@@ -386,7 +391,13 @@ describe.runIf(RUN)('exec against a real container (Phase 4)', () => {
 			]);
 			expect(detached.outcome).toBe('success');
 			expect(await count(project, '^[s]leep 7[34]')).toBe(2);
-			await execCommand(ctx, ref, ['kill', '-15', `-${detached.pid}`]);
+			// `kill` is a shell builtin: slim images have no kill binary.
+			const stopped = await execCommand(ctx, ref, [
+				'sh',
+				'-c',
+				`kill -15 -${detached.pid}`,
+			]);
+			expect(stopped.exitCode).toBe(0);
 			await new Promise((resolve) => setTimeout(resolve, 500));
 			expect(await count(project, '^[s]leep 7[34]')).toBe(0);
 		},
@@ -465,3 +476,238 @@ async function primaryId(dockerExe: string, root: string): Promise<string> {
 	}
 	return run.result.stdout.trim().split('\n')[0] as string;
 }
+
+describe.runIf(RUN)('the built CLI, end to end (Phase 4)', () => {
+	const CLI = join(import.meta.dirname, '..', '..', 'dist', 'cli.js');
+
+	interface Ran {
+		code: number | null;
+		stdout: Buffer;
+		stderr: string;
+	}
+	const cli = (project: Project, args: string[]): Ran => {
+		const run = spawnSync(process.execPath, [CLI, ...args], {
+			cwd: project.ref.rootPath,
+			env: { ...project.ctx.env, BRING_NO_UPDATE_CHECK: '1', NO_COLOR: '1' },
+			timeout: 4 * MINUTES,
+		});
+		return {
+			code: run.status,
+			stdout: run.stdout,
+			stderr: run.stderr.toString(),
+		};
+	};
+	const lines = (ran: Ran) =>
+		ran.stdout
+			.toString()
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+	const countProcesses = (project: Project, pattern: string): number => {
+		const ran = cli(project, [
+			'exec',
+			'--json',
+			'--',
+			'sh',
+			'-c',
+			`for p in /proc/[0-9]*; do tr "\\0" " " < $p/cmdline 2>/dev/null; echo; done | grep -c "${pattern}" || true`,
+		]);
+		expect(ran.code).toBe(0);
+		const doc = JSON.parse(ran.stdout.toString()) as { stdout: string };
+		expect(doc.stdout.trim()).toMatch(/^\d+$/);
+		return Number(doc.stdout.trim());
+	};
+
+	it(
+		'exec, --events, detach, prune preview and forward behave as documented',
+		async () => {
+			// `npm run test:integration` builds first; fail loudly otherwise.
+			expect(
+				existsSync(CLI),
+				'dist/cli.js is missing — run `npm run build`',
+			).toBe(true);
+			const project = prepare('minimal');
+
+			// exec never starts a workspace.
+			const cold = cli(project, ['exec', '--', 'true']);
+			expect(cold.code).toBe(1);
+			expect(cold.stderr).toContain('is not running');
+			expect(cold.stderr).toContain(' up');
+
+			// --events: started first, completed last, nothing but JSON lines.
+			const up = cli(project, ['up', '--events']);
+			expect(up.code).toBe(0);
+			const events = lines(up);
+			expect(events[0]).toMatchObject({ schemaVersion: 1, type: 'started' });
+			expect(events.at(-1)).toMatchObject({
+				type: 'completed',
+				result: { operation: 'up', outcome: 'success' },
+			});
+			expect(events.some((e) => e.type === 'output')).toBe(false);
+
+			// --json: the command's exit code is the process exit code (DD-6).
+			const failed = cli(project, [
+				'exec',
+				'--json',
+				'--',
+				'sh',
+				'-c',
+				'echo hi; exit 3',
+			]);
+			expect(failed.code).toBe(3);
+			expect(JSON.parse(failed.stdout.toString())).toMatchObject({
+				schemaVersion: 1,
+				operation: 'exec',
+				outcome: 'success',
+				exitCode: 3,
+				stdout: 'hi\n',
+				stderr: '',
+				command: ['sh', '-c', 'echo hi; exit 3'],
+			});
+
+			// Plain mode: stdout is exactly the command's bytes; the summary
+			// goes to stderr.
+			const binary = cli(project, [
+				'exec',
+				'--',
+				'printf',
+				'\\377\\000A\\342\\202',
+			]);
+			expect(binary.code).toBe(0);
+			expect([...binary.stdout]).toEqual([0xff, 0x00, 0x41, 0xe2, 0x82]);
+			expect(binary.stderr).toContain('✓ printf');
+
+			// A missing command: 127 passes through, with a hint.
+			const missing = cli(project, ['exec', '--', 'no-such-command']);
+			expect(missing.code).toBe(127);
+			expect(missing.stderr).toContain('is `no-such-command` installed');
+
+			// Timeout: exit 124, and nothing survives — not even a process
+			// that moved to its own session.
+			const slow = cli(project, [
+				'exec',
+				'--timeout',
+				'2',
+				'--',
+				'sh',
+				'-c',
+				'setsid sleep 81 & sleep 82',
+			]);
+			expect(slow.code).toBe(124);
+			expect(slow.stderr).toContain('did not finish within 2s');
+			expect(countProcesses(project, '^[s]leep 8[12]')).toBe(0);
+
+			// Detach: returns at once; the stop command it hands back works.
+			const detached = cli(project, [
+				'exec',
+				'--detach',
+				'--json',
+				'--',
+				'sh',
+				'-c',
+				'sleep 83 & sleep 84',
+			]);
+			expect(detached.code).toBe(0);
+			const started = JSON.parse(detached.stdout.toString()) as {
+				pid: number;
+				stopCommand: string;
+				containerLogPath: string;
+				warnings: string[];
+			};
+			expect(started.warnings).toEqual([]);
+			expect(started.stopCommand).toBe(
+				`bring . exec -- sh -c 'kill -15 -${started.pid}'`,
+			);
+			expect(countProcesses(project, '^[s]leep 8[34]')).toBe(2);
+			// Run exactly what was handed back (minus the `bring .` prefix).
+			expect(
+				cli(project, ['exec', '--', 'sh', '-c', `kill -15 -${started.pid}`])
+					.code,
+			).toBe(0);
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			expect(countProcesses(project, '^[s]leep 8[34]')).toBe(0);
+
+			// Inventory and the prune preview never change anything.
+			const containers = JSON.parse(
+				cli(project, ['containers', '--json']).stdout.toString(),
+			) as { containers: { workspacePath: string; role: string }[] };
+			expect(
+				containers.containers.some(
+					(c) =>
+						c.workspacePath === project.ref.rootPath && c.role === 'primary',
+				),
+			).toBe(true);
+			const preview = cli(project, ['images', 'prune', '--dry-run', '--json']);
+			expect(preview.code).toBe(0);
+			expect(JSON.parse(preview.stdout.toString())).toMatchObject({
+				operation: 'prune',
+				dryRun: true,
+				outcome: 'success',
+			});
+
+			// forward: a server bound to 127.0.0.1 inside the container is
+			// reachable; Ctrl+C exits 0 and leaves no bridge behind.
+			expect(
+				cli(project, [
+					'exec',
+					'--detach',
+					'--',
+					'perl',
+					'-MIO::Socket::INET',
+					'-e',
+					'my $s=IO::Socket::INET->new(LocalAddr=>"127.0.0.1",LocalPort=>5173,Listen=>5,ReuseAddr=>1) or die; while(my $c=$s->accept){ while(<$c>){ last if /^\\r?\\n$/ } print $c "HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\nok"; close $c }',
+				]).code,
+			).toBe(0);
+			const probe = createNetServer();
+			await new Promise<void>((resolve) =>
+				probe.listen(0, '127.0.0.1', resolve),
+			);
+			const hostPort = (probe.address() as AddressInfo).port;
+			await new Promise((resolve) => probe.close(resolve));
+			const forward = spawn(
+				process.execPath,
+				[CLI, 'forward', `${hostPort}:5173`],
+				{
+					cwd: project.ref.rootPath,
+					env: {
+						...project.ctx.env,
+						BRING_NO_UPDATE_CHECK: '1',
+						NO_COLOR: '1',
+					},
+				},
+			);
+			let out = '';
+			forward.stdout.on('data', (d: Buffer) => {
+				out += d.toString();
+			});
+			const exited = new Promise<number | null>((resolve) =>
+				forward.on('close', (code) => resolve(code)),
+			);
+			try {
+				for (let i = 0; i < 100 && !out.includes('Ctrl+C to stop'); i++) {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+				expect(out).toContain(`localhost:${hostPort} → 5173`);
+				for (let i = 0; i < 3; i++) {
+					const res = await fetch(`http://127.0.0.1:${hostPort}/`);
+					expect(await res.text()).toBe('ok');
+				}
+			} finally {
+				forward.kill('SIGINT');
+			}
+			expect(await exited).toBe(0);
+			// Kept-alive connections end within the bridge's 3s linger.
+			await new Promise((resolve) => setTimeout(resolve, 4000));
+			expect(countProcesses(project, '^[b]ash -c exec 3')).toBe(0);
+
+			// --events on an early exit still ends with `completed`.
+			const refused = cli(project, ['remove', '--events']);
+			expect(refused.code).toBe(2);
+			expect(lines(refused).at(-1)).toMatchObject({
+				type: 'completed',
+				result: { outcome: 'failed', error: { code: 'USAGE_ERROR' } },
+			});
+		},
+		8 * MINUTES,
+	);
+});

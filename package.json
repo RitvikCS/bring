@@ -36,7 +36,7 @@
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"test": "vitest run",
-		"test:integration": "BRING_INTEGRATION=1 vitest run test/integration",
+		"test:integration": "npm run build && BRING_INTEGRATION=1 vitest run test/integration",
 		"test:watch": "vitest",
 		"prepack": "npm run build"
 	},

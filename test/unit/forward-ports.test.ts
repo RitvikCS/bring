@@ -8,12 +8,14 @@ import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { afterEach, it as baseIt, describe, expect, it } from 'vitest';
 import {
 	bridgeArgv,
+	bridgesForFileLimit,
 	explainConnectionFailure,
 	type ForwardEvent,
 	type Forwarding,
 	type ForwardSpec,
 	HELPERS,
 	type Helper,
+	MAX_BRIDGES,
 	PROBE_SCRIPT,
 	parsePortSpec,
 	resolveSpecs,
@@ -414,5 +416,76 @@ describe('startForwarding under failure and load', () => {
 		);
 		expect(bodies).toEqual(Array(8).fill('ok'));
 		expect(peak).toBeLessThanOrEqual(2);
+	});
+});
+
+describe('running out of file handles', () => {
+	it('makes the connection wait for a free bridge instead of dropping it', async () => {
+		const target = await httpServer('ok');
+		const hostPort = await freePort();
+		const events: ForwardEvent[] = [];
+		let alive = 0;
+		const f = await startForwarding({
+			specs: [{ hostPort, targetHost: '127.0.0.1', targetPort: target }],
+			// Pretend the machine can hold two bridges: a third spawn fails
+			// the way Node reports EMFILE.
+			openBridge: async (spec) => {
+				if (alive >= 2) {
+					const dud = spawnBridge('/nonexistent/bring-bridge', []);
+					dud.once('error', (error) => {
+						(error as NodeJS.ErrnoException).code = 'EMFILE';
+					});
+					return dud;
+				}
+				const [cmd, ...args] = bridgeArgv(
+					'node',
+					spec.targetHost,
+					spec.targetPort,
+				);
+				const child = spawnBridge(cmd as string, args);
+				alive++;
+				child.on('close', () => {
+					alive--;
+				});
+				return child;
+			},
+			onEvent: (e) => events.push(e),
+			bridgeGraceMs: 300,
+		});
+		open.push(f);
+		const bodies = await Promise.all(
+			Array.from({ length: 8 }, async () => {
+				const res = await fetch(`http://127.0.0.1:${hostPort}/`, {
+					headers: { connection: 'close' },
+				});
+				return res.text();
+			}),
+		);
+		expect(bodies).toEqual(Array(8).fill('ok'));
+		expect(events.filter((e) => e.type === 'connection-failed')).toEqual([]);
+	});
+});
+
+describe('bridgesForFileLimit', () => {
+	it.each([
+		[undefined, MAX_BRIDGES],
+		[Number.POSITIVE_INFINITY, MAX_BRIDGES],
+		[1_048_576, MAX_BRIDGES],
+		[1024, MAX_BRIDGES],
+		[256, 36], // macOS default
+		[80, 6],
+		[16, 2],
+	])('ulimit -n %j → %i bridges', (limit, bridges) => {
+		expect(bridgesForFileLimit(limit)).toBe(bridges);
+	});
+
+	it('names the cause when file handles run out', () => {
+		expect(
+			explainConnectionFailure(
+				'spawn /usr/bin/docker EMFILE',
+				{ hostPort: 1, targetHost: '127.0.0.1', targetPort: 5173 },
+				'api',
+			),
+		).toContain('ran out of file handles');
 	});
 });
