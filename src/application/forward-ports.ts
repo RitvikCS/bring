@@ -81,19 +81,34 @@ export function describeSpec(spec: ForwardSpec): string {
 	return `localhost:${spec.hostPort} → ${target}`;
 }
 
-/** Bridge programs, in preference order (spike §mechanisms). */
-export const HELPERS = ['socat', 'bash', 'node'] as const;
+/**
+ * Bridge programs, in preference order. bash first: it is in nearly every
+ * dev container image and ends the bridge the instant the server closes.
+ * socat last: it waits 0.5s after either side closes, which adds 0.5s to
+ * every response that ends by closing the connection (measured — e.g.
+ * `python -m http.server`).
+ */
+export const HELPERS = ['bash', 'node', 'socat'] as const;
 export type Helper = (typeof HELPERS)[number];
 
 /** Prints the first available helper's name; exits 1 when there is none. */
 export const PROBE_SCRIPT = `for h in ${HELPERS.join(' ')}; do command -v "$h" >/dev/null 2>&1 && { echo "$h"; exit 0; }; done; exit 1`;
 
 /**
+ * After the client stops sending, how long a bridge keeps waiting for the
+ * server's reply before ending itself. Covers clients that half-close and
+ * then read (`printf … | nc`); browsers and curl never rely on it.
+ */
+export const BRIDGE_LINGER_SECONDS = 3;
+
+/**
  * The argv run inside the container for one connection: stdin → port,
- * port → stdout. Every variant ends the WHOLE bridge as soon as either
- * side closes — a docker exec killed from the host would otherwise leave
- * the in-container half running (verified for exec, P4 §1 V3). `kill 0`
- * works because an exec'd process leads its own process group (V4).
+ * port → stdout. Every variant ends ITSELF: at once when the server closes,
+ * and within the linger after the client stops sending. It must, because a
+ * docker exec killed from the host leaves the in-container process running
+ * (verified for exec, P4 §1 V3). `kill 0` works because an exec'd process
+ * leads its own process group (V4). node and socat pass the client's
+ * end-of-input on to the server; bash cannot (no shutdown on /dev/tcp).
  */
 export function bridgeArgv(
 	helper: Helper,
@@ -107,7 +122,7 @@ export function bridgeArgv(
 			return [
 				'bash',
 				'-c',
-				'exec 3<>"/dev/tcp/$0/$1" || exit 1; { cat <&3; kill 0; } & cat >&3; kill 0',
+				`exec 3<>"/dev/tcp/$0/$1" || exit 1; { cat <&3; kill 0; } & cat >&3; sleep ${BRIDGE_LINGER_SECONDS}; kill 0`,
 				targetHost,
 				String(targetPort),
 			];
@@ -119,8 +134,8 @@ export function bridgeArgv(
 					'const s=require("net").connect(+process.argv[2],process.argv[1]);',
 					's.on("error",e=>{process.stderr.write(String(e.message)+"\\n");process.exit(1)});',
 					'process.stdin.pipe(s);s.pipe(process.stdout);',
-					'process.stdin.on("end",()=>process.exit(0));',
-					'process.stdout.on("finish",()=>process.exit(0));',
+					's.on("close",()=>process.exit(0));',
+					`process.stdin.on("end",()=>setTimeout(()=>process.exit(0),${BRIDGE_LINGER_SECONDS * 1000}));`,
 				].join(''),
 				targetHost,
 				String(targetPort),
@@ -160,7 +175,7 @@ export async function startForwarding(
 	const listening: ForwardSpec[] = [];
 	const bridges = new Set<ChildProcessWithoutNullStreams>();
 	const sockets = new Set<Socket>();
-	const grace = options.bridgeGraceMs ?? 2000;
+	const grace = options.bridgeGraceMs ?? (BRIDGE_LINGER_SECONDS + 2) * 1000;
 
 	const handle = (spec: ForwardSpec, socket: Socket) => {
 		sockets.add(socket);
@@ -184,8 +199,8 @@ export async function startForwarding(
 				socket.resume();
 				let killTimer: NodeJS.Timeout | undefined;
 				socket.on('close', () => {
-					// EOF lets the in-container helper end itself (and its
-					// connection); the kill is only a backstop.
+					// End-of-input lets the in-container helper end itself
+					// (and its connection); the kill is only a backstop.
 					child.stdin.end();
 					killTimer = setTimeout(() => child.kill('SIGTERM'), grace);
 				});
@@ -223,7 +238,11 @@ export async function startForwarding(
 	};
 
 	for (const spec of options.specs) {
-		const server = createServer((socket) => handle(spec, socket));
+		// allowHalfOpen: a client may finish sending and still wait for the
+		// reply; the socket is ended when the bridge closes.
+		const server = createServer({ allowHalfOpen: true }, (socket) =>
+			handle(spec, socket),
+		);
 		const bound = await new Promise<boolean>((resolve) => {
 			server.once('error', (error: NodeJS.ErrnoException) => {
 				options.onEvent({

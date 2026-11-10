@@ -29,6 +29,9 @@ Actions
   exec -- <cmd>                Run one command inside it, non-interactively;
                                exits with the command's own exit code
                                (--json, --timeout <s>, --detach)
+  forward [ports…]             Reach servers in the container from this
+                               machine until Ctrl+C. No ports: uses
+                               forwardPorts from devcontainer.json
   logs                         Show the last captured operation log (--clear)
   status                       Show a one-workspace status summary
   remove                       Stop and DELETE devcontainer resources
@@ -73,6 +76,7 @@ Examples
   bring ../api down            Stop the api project next door
   bring . shell -- zsh         Open zsh instead of bash
   bring exec -- npm test       Run the tests inside the container
+  bring forward 5173           Open the container's port 5173 on localhost
   bring status --json          Feed a script
 
 Inside the TUI, press ? for keyboard help.

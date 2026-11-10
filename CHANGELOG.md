@@ -8,6 +8,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `bring forward [ports…]`: reach servers inside the container from your
+  machine until Ctrl+C. With no arguments it forwards the `forwardPorts`
+  from devcontainer.json — which the Dev Containers CLI itself ignores —
+  or name ports (`5173`, `8080:3000`, `db:5432` for a Compose service).
+  Works with servers that listen only on `localhost` in the container
+  (Vite's default), with no config edit and no rebuild; listens on
+  `127.0.0.1` only; survives a rebuild. Needs bash, node, or socat in the
+  container.
 - `bring exec -- <cmd>`: run one command inside a running workspace without
   taking over the terminal — for scripts, CI, and coding agents. Output
   streams live (Bring's summary goes to stderr), and Bring exits with the

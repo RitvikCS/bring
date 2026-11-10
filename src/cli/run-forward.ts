@@ -72,7 +72,7 @@ export async function runForwardRoute(
 			`✗ ${name} has none of ${HELPERS.join(', ')} — Bring needs one of them inside the container to forward ports.`,
 		);
 		console.error(
-			'  Add socat to the image (Debian/Ubuntu: apt-get install -y socat · Alpine: apk add socat), then rebuild.',
+			'  Add bash to the image (Alpine: apk add bash), then rebuild.',
 		);
 		return EXIT.dependency;
 	}

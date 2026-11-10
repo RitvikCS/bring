@@ -407,7 +407,9 @@ describe.runIf(RUN)('forward into a real container (Phase 4)', () => {
 				'perl',
 				'-MIO::Socket::INET',
 				'-e',
-				'my $s=IO::Socket::INET->new(LocalAddr=>"127.0.0.1",LocalPort=>5173,Listen=>5,ReuseAddr=>1) or die; while(my $c=$s->accept){ while(<$c>){ last if /^\r?\n$/ } print $c "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"; close $c }',
+				// Escapes are doubled so Perl, not TypeScript, turns them into CR/LF:
+				// Perl folds a literal CRLF in its source to LF (malformed HTTP).
+				'my $s=IO::Socket::INET->new(LocalAddr=>"127.0.0.1",LocalPort=>5173,Listen=>5,ReuseAddr=>1) or die; while(my $c=$s->accept){ while(<$c>){ last if /^\\r?\\n$/ } print $c "HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\nConnection: close\\r\\n\\r\\nok"; close $c }',
 			]);
 			expect(server.outcome).toBe('success');
 			const containerId = await primaryId(ctx.dockerExe, ref.rootPath);

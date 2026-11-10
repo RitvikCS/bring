@@ -128,6 +128,52 @@ With `--json` the same appears as `pid`, `containerLogPath`, `tailCommand`,
 processes; `bring down` stops everything anyway. To open the server from
 your machine, see `bring forward`.
 
+### `bring forward`
+
+Makes a server running inside the container reachable from your machine —
+a Vite or FastAPI dev server, a database, a debugger port — until you
+press Ctrl+C:
+
+```sh
+bring forward                # every port in devcontainer.json "forwardPorts"
+bring forward 5173           # http://localhost:5173 → port 5173 in the container
+bring forward 8080:3000      # your port 8080 → the container's port 3000
+bring forward db:5432        # a Compose service, by its service name
+bring forward 15432:db:5432  # …on a different local port
+```
+
+```
+✓ localhost:5173 → 5173
+Forwarding into api via bash (only this machine can connect) — Ctrl+C to stop.
+```
+
+Why this exists: the Dev Containers CLI ignores `forwardPorts` (only VS Code
+honours it), and the alternative, `appPort`, needs an edit to
+devcontainer.json, a rebuild, and a server that listens on `0.0.0.0`.
+`bring forward` needs none of that: it works with servers that listen only
+on `localhost` inside the container (Vite's default), and changes nothing in
+your project or container.
+
+- It listens on `127.0.0.1` only — other machines on your network cannot
+  connect.
+- It runs in the foreground, like VS Code's forwarding while a window is
+  connected. Keep it in its own terminal tab. There is no background mode.
+- The workspace must be running. If nothing is listening on a port yet, the
+  forwarder says so and keeps going — start the server whenever.
+- After a `bring rebuild`, it finds the new container by itself.
+- If a local port is taken, that port is skipped with a suggestion
+  (`bring forward 5174:5173`); the others keep working.
+- It needs one of `bash`, `node`, or `socat` inside the container (checked
+  in that order). Nearly every dev container image has bash; on a bare
+  Alpine image add it (`apk add bash`).
+- Each new connection costs roughly 0.1 s to set up; data then flows at
+  full speed. Pages that open many connections at once load a little slower
+  than through a published port.
+- Not supported: `--json`, UDP, and the labels in `portsAttributes`.
+
+Starting the server from a script or agent? Pair it with
+`bring exec --detach -- npm run dev`.
+
 ### `bring status`
 
 One workspace's live summary: status, containers, image, config, ports.

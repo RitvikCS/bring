@@ -164,6 +164,42 @@ describe.each([
 		expect(bridge.spawned.every(exited)).toBe(true);
 	});
 
+	it('delivers the reply to a client that stops sending first (half-close)', async () => {
+		if (!(await hasCommand(helper))) return;
+		// Replies 300 ms after the request, then closes. allowHalfOpen: like a
+		// real server that supports it, keep the socket writable after the
+		// client's end-of-input (the node bridge passes that on).
+		const slow = createNetServer({ allowHalfOpen: true }, (c) => {
+			c.once('data', () => {
+				setTimeout(() => c.end('late reply'), 300);
+			});
+			c.on('error', () => {});
+		});
+		await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
+		const target = (slow.address() as AddressInfo).port;
+		const { hostPort } = await forward(helper, target);
+		const { connect } = await import('node:net');
+		const started = Date.now();
+		const reply = await new Promise<string>((resolve) => {
+			let text = '';
+			const client = connect({
+				port: hostPort,
+				host: '127.0.0.1',
+				allowHalfOpen: true,
+			});
+			client.on('data', (d) => {
+				text += d.toString();
+			});
+			client.on('close', () => resolve(text));
+			client.end('request');
+		});
+		slow.close();
+		expect(reply).toBe('late reply');
+		// The bridge ends as soon as the server closes — it does not sit out
+		// the linger.
+		expect(Date.now() - started).toBeLessThan(2000);
+	});
+
 	it('reports a refused connection without stopping the forwarder', async () => {
 		if (!(await hasCommand(helper))) return;
 		const dead = await freePort();

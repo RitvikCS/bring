@@ -12,6 +12,8 @@ bring this up        # yes, that works — `this` and `.` mean "this project"
 bring up             # start the dev container for the current project
 bring down           # stop it (containers kept for a fast restart)
 bring shell          # open a shell inside it (bring shell -- zsh works too)
+bring exec -- npm test   # run one command inside it, exit code and all
+bring forward 5173   # open the container's port 5173 on localhost
 bring status         # what's running, which ports, which config
 bring ls             # every project bring knows, with live status
 bring containers     # inspect and act on Dev Container containers
@@ -86,6 +88,18 @@ your dotfiles into every container it creates — after one success the URL is
 remembered as your user default, so future containers just come out looking
 like home (`--dotfiles none` skips it once). Details in
 [docs/commands.md](docs/commands.md#dotfiles).
+
+### Ports, scripts, and coding agents
+
+`bring forward` makes the `forwardPorts` in your devcontainer.json work
+outside VS Code — the Dev Containers CLI ignores them — and reaches servers
+that only listen on `localhost` inside the container, with no config edit
+and no rebuild. For scripts and coding agents, `bring exec -- <cmd>` runs a
+command inside the container and passes its exit code through (`--json` for
+the output, `--timeout`, `--detach` for servers), `--events` streams the
+progress of a long `bring up` as JSON lines, and `bring images prune`,
+`bring containers --json`, and `bring images --json` cover cleanup and
+inventory. All of it is in [docs/commands.md](docs/commands.md).
 
 A project counts as configured when it has
 `.devcontainer/devcontainer.json` or `.devcontainer.json` — the same rules
