@@ -1,6 +1,6 @@
 {
 	"name": "@ritvikcs/bring",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "Friendly terminal UI and command layer on top of the Dev Containers CLI",
 	"type": "module",
 	"license": "Apache-2.0",
@@ -36,12 +36,12 @@
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"test": "vitest run",
-		"test:integration": "BRING_INTEGRATION=1 vitest run test/integration",
+		"test:integration": "npm run build && BRING_INTEGRATION=1 vitest run test/integration",
 		"test:watch": "vitest",
 		"prepack": "npm run build"
 	},
 	"dependencies": {
-		"@devcontainers/cli": "^0.87.0",
+		"@devcontainers/cli": ">=0.90.0 <1.0.0",
 		"ink": "^7.1.0",
 		"react": "^19.2.7"
 	},

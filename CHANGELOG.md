@@ -6,6 +6,61 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+### Added
+
+- `bring forward [ports…]`: reach servers inside the container from your
+  machine until Ctrl+C. With no arguments it forwards the `forwardPorts`
+  from devcontainer.json — which the Dev Containers CLI itself ignores —
+  or name ports (`5173`, `8080:3000`, `db:5432` for a Compose service).
+  Works with servers that listen only on `localhost` in the container
+  (Vite's default), with no config edit and no rebuild; listens on
+  `127.0.0.1` only; survives a rebuild. Needs bash, node, or socat in the
+  container.
+- `bring exec -- <cmd>`: run one command inside a running workspace without
+  taking over the terminal — for scripts, CI, and coding agents. Output
+  passes through byte for byte (Bring's summary goes to stderr), and Bring
+  exits with the command's own exit code. `--json` returns the command,
+  exit code, and the last 16 KiB of stdout/stderr in one document.
+  `--timeout <seconds>` stops the command and exits 124 (new error code
+  `COMMAND_TIMEOUT`). `--detach` starts servers in the background and prints
+  the pid plus the exact stop command. A timeout, Ctrl+C, or a closed output
+  pipe stops every process the command started *inside* the container —
+  plain `devcontainer exec`/`docker exec` leave them running. Each run's
+  output is kept under `logs/<workspace>/exec/` (last 20, 32 MiB each),
+  separate from the `up`/`rebuild` log that `bring logs` shows; a detached
+  command logs inside the container instead.
+- `--events` for `up`, `rebuild`, `down`, `remove`: progress as one JSON
+  object per line on stdout, ending with a `completed` line that carries the
+  same result `--json` prints. Raw build output is included only with
+  `--verbose`. Lets a script or agent watch a long `bring up` instead of
+  waiting blind.
+- `bring images prune`: remove unused, unnamed Dev Container images from a
+  script — exactly the set the TUI's `p` stages (no cached bases, no named
+  or pinned images, never attached ones, no `--force`). `--dry-run`
+  previews; without a terminal it needs `--yes`.
+- `--json` for `bring containers`, `bring images` (direct inventory instead
+  of the TUI section) and `bring forget`.
+
+### Changed
+
+- `exec` and `forward` are now actions, so a workspace folder literally
+  named `exec` or `forward` must be addressed as a path (`bring ./exec up`)
+  — the same rule that already applies to folders named `up`, `shell`, etc.
+
+- The bundled Dev Containers CLI is no longer pinned to 0.87.x: Bring now
+  accepts any 0.x release from 0.90.0 on, so a fresh install gets upstream
+  fixes without waiting for a Bring release. The real-container tests now
+  run in CI on every pull request and weekly against the latest upstream
+  CLI. A system-wide `devcontainer` on PATH is still preferred when present.
+
+### Fixed
+
+- `bring remove --json` without `--yes` no longer shows a y/N prompt on
+  stdout in a terminal (it corrupted the JSON); like non-interactive runs,
+  it now asks for `--yes` and exits 2.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added

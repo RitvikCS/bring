@@ -4,11 +4,13 @@ import {
 	fstatSync,
 	mkdirSync,
 	openSync,
+	readdirSync,
 	readFileSync,
 	readSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
+	writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -87,4 +89,81 @@ export function readLogTail(
 
 export function clearLogs(stateDir: string, identity: string): void {
 	rmSync(logDirFor(stateDir, identity), { recursive: true, force: true });
+}
+
+/** Exec logs kept per workspace; older ones are deleted when one opens. */
+export const EXEC_LOG_RETENTION = 20;
+
+export interface ExecLog {
+	path: string;
+	/** Append output as it arrives. Never throws: the log is best-effort. */
+	write: (chunk: Buffer | string) => void;
+	close: (trailer: string) => void;
+}
+
+/**
+ * Open the log for one `bring exec` (spec P4 §2.9) and write to it as output
+ * arrives, so a long-running command never has to fit in memory. Exec logs
+ * live in their own folder: a burst of agent commands can never rotate away
+ * the build log of a failed `up` (latest.log / previous.log are untouched).
+ * Returns null when the log cannot be created (read-only or full state
+ * directory) — the command still runs, just without a log.
+ */
+export function openExecLog(
+	stateDir: string,
+	identity: string,
+	header: string,
+	now: Date = new Date(),
+): ExecLog | null {
+	let fd: number;
+	let path: string;
+	try {
+		const dir = join(logDirFor(stateDir, identity), 'exec');
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const stamp = now.toISOString().replace(/[:.]/g, '-');
+		const suffix = Math.random().toString(36).slice(2, 8);
+		path = join(dir, `${stamp}-${suffix}.log`);
+		fd = openSync(path, 'w', 0o600);
+		writeSync(fd, header);
+		const logs = readdirSync(dir)
+			.filter((name) => name.endsWith('.log'))
+			.sort();
+		for (const old of logs.slice(
+			0,
+			Math.max(0, logs.length - EXEC_LOG_RETENTION),
+		)) {
+			rmSync(join(dir, old), { force: true });
+		}
+	} catch {
+		return null;
+	}
+	let open = true;
+	const safely = (action: () => void) => {
+		if (!open) {
+			return;
+		}
+		try {
+			action();
+		} catch {
+			// Disk full mid-run: stop logging, keep the command going.
+			open = false;
+			try {
+				closeSync(fd);
+			} catch {
+				// already closed
+			}
+		}
+	};
+	return {
+		path,
+		write: (chunk) =>
+			safely(() =>
+				writeSync(fd, typeof chunk === 'string' ? Buffer.from(chunk) : chunk),
+			),
+		close: (trailer) => {
+			safely(() => writeSync(fd, trailer));
+			safely(() => closeSync(fd));
+			open = false;
+		},
+	};
 }

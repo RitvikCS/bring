@@ -7,6 +7,9 @@ const DEFAULTS = {
 	yes: false,
 	noCache: false,
 	clear: false,
+	detach: false,
+	events: false,
+	dryRun: false,
 };
 
 describe('parseArgv', () => {
@@ -27,8 +30,12 @@ describe('parseArgv', () => {
 		[['doctor', '--help'], { kind: 'help' }],
 		[['ls'], { kind: 'ls', json: false }],
 		[['ls', '--json'], { kind: 'ls', json: true }],
-		[['forget', 'api'], { kind: 'forget', target: 'api' }],
-		[['forget', '../api'], { kind: 'forget', target: '../api' }],
+		[['forget', 'api'], { kind: 'forget', target: 'api', json: false }],
+		[
+			['forget', 'api', '--json'],
+			{ kind: 'forget', target: 'api', json: true },
+		],
+		[['forget', '../api'], { kind: 'forget', target: '../api', json: false }],
 		[['workspaces'], { kind: 'section', section: 'workspaces' }],
 		[['containers'], { kind: 'section', section: 'containers' }],
 		[['images'], { kind: 'section', section: 'images' }],
@@ -118,5 +125,212 @@ describe('parseArgv', () => {
 		if (route.kind === 'usage-error') {
 			expect(route.message).toMatch(pattern);
 		}
+	});
+});
+
+describe('parseArgv — exec (Phase 4)', () => {
+	it('routes exec with its command after `--`', () => {
+		expect(parseArgv(['exec', '--json', '--', 'npm', 'test'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'exec',
+			options: { ...DEFAULTS, json: true, shellCommand: ['npm', 'test'] },
+		});
+	});
+
+	it('accepts a target, --timeout and --config before `--`', () => {
+		expect(
+			parseArgv(['api', 'exec', '--timeout', '30', '--', 'sh', '-c', 'x']),
+		).toMatchObject({
+			kind: 'direct',
+			target: 'api',
+			action: 'exec',
+			options: { timeoutSeconds: 30, shellCommand: ['sh', '-c', 'x'] },
+		});
+	});
+
+	it('never reads flags after `--` as Bring flags', () => {
+		expect(parseArgv(['exec', '--', 'ls', '--json'])).toMatchObject({
+			options: { json: false, shellCommand: ['ls', '--json'] },
+		});
+	});
+
+	it.each([
+		[['exec']],
+		[['exec', '--json']],
+		[['exec', '--']],
+	])('requires a command after `--` (%j)', (argv) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('needs a command'),
+		});
+	});
+
+	it.each([
+		[['exec', '--timeout', '0', '--', 'x'], 'whole number'],
+		[['exec', '--timeout', 'soon', '--', 'x'], 'whole number'],
+		[['exec', '--timeout'], 'whole number'],
+		[['exec', '--timeout', '1.5', '--', 'x'], 'whole number'],
+		[['exec', '--detach', '--timeout', '5', '--', 'x'], 'conflict'],
+		[['exec', '--verbose', '--', 'x'], 'does not apply to exec'],
+		[['exec', '--yes', '--', 'x'], 'does not apply to exec'],
+		[['up', '--timeout', '5'], 'only applies to exec'],
+		[['up', '--detach'], 'only applies to exec'],
+		[['up', '--', 'x'], 'shell and exec'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+
+	it('allows --detach with --json', () => {
+		expect(
+			parseArgv(['exec', '--detach', '--json', '--', 'npm', 'run', 'dev']),
+		).toMatchObject({
+			action: 'exec',
+			options: { detach: true, json: true },
+		});
+	});
+});
+
+describe('parseArgv — --events (Phase 4)', () => {
+	it.each([
+		['up'],
+		['rebuild'],
+		['down'],
+		['remove'],
+	])('accepts %s', (action) => {
+		expect(parseArgv([action, '--events', '--verbose'])).toMatchObject({
+			kind: 'direct',
+			options: { events: true, verbose: true },
+		});
+	});
+
+	it.each([
+		[['up', '--events', '--json'], 'conflict'],
+		[['status', '--events'], 'only applies to up'],
+		[['exec', '--events', '--', 'x'], 'only applies to up'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+});
+
+describe('parseArgv — inventory JSON and prune (Phase 4)', () => {
+	it.each([
+		[['containers'], { kind: 'section', section: 'containers' }],
+		[['images'], { kind: 'section', section: 'images' }],
+		[['containers', '--json'], { kind: 'inventory', section: 'containers' }],
+		[['images', '--json'], { kind: 'inventory', section: 'images' }],
+		[['profiles', '--json'], { kind: 'section', section: 'profiles' }],
+		[
+			['images', 'prune'],
+			{ kind: 'prune', json: false, yes: false, dryRun: false },
+		],
+		[
+			['images', 'prune', '--dry-run', '--json'],
+			{ kind: 'prune', json: true, yes: false, dryRun: true },
+		],
+		[
+			['images', 'prune', '-y'],
+			{ kind: 'prune', json: false, yes: true, dryRun: false },
+		],
+	])('routes %j', (argv, route) => {
+		expect(parseArgv(argv)).toEqual(route);
+	});
+
+	it.each([
+		[['images', 'prune', '--dry-run', '--yes'], 'conflict'],
+		[['images', 'prune', 'all'], 'Unexpected argument'],
+		[['images', 'foo'], 'except `prune`'],
+		[['up', '--dry-run'], 'only applies to `bring images prune`'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+});
+
+describe('parseArgv — forward (Phase 4)', () => {
+	it('takes ports after the action', () => {
+		expect(parseArgv(['forward', '5173', '8080:3000'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'forward',
+			options: { ...DEFAULTS, ports: ['5173', '8080:3000'] },
+		});
+		expect(parseArgv(['../api', 'forward', 'db:5432'])).toMatchObject({
+			target: '../api',
+			action: 'forward',
+			options: { ports: ['db:5432'] },
+		});
+	});
+
+	it('reads forwardPorts when no port is given', () => {
+		expect(parseArgv(['forward'])).toEqual({
+			kind: 'direct',
+			target: '.',
+			action: 'forward',
+			options: { ...DEFAULTS },
+		});
+	});
+
+	it('rejects --json and still rejects extra args on other actions', () => {
+		expect(parseArgv(['forward', '--json'])).toMatchObject({
+			kind: 'usage-error',
+		});
+		expect(parseArgv(['up', 'now'])).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('Unexpected argument'),
+		});
+	});
+});
+
+describe('parseArgv — review fixes', () => {
+	it.each([
+		['1e3'],
+		['0x10'],
+		['2147484'],
+		['99999999'],
+		['-5'],
+		['5s'],
+		[' 5'],
+	])('rejects --timeout %j', (value) => {
+		expect(parseArgv(['exec', '--timeout', value, '--', 'x'])).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('from 1 to 2147483'),
+		});
+	});
+
+	it('accepts the largest timeout a timer can hold', () => {
+		expect(
+			parseArgv(['exec', '--timeout', '2147483', '--', 'x']),
+		).toMatchObject({ options: { timeoutSeconds: 2147483 } });
+	});
+
+	it.each([
+		[['ls', '--events'], '--events only applies to up'],
+		[['doctor', '--detach'], '--detach only applies to exec'],
+		[['forget', 'api', '--timeout', '5'], '--timeout only applies to exec'],
+		[['containers', '--json', '--events'], '--events only applies'],
+		[['images', '--dry-run'], '--dry-run only applies to `bring images prune`'],
+		[['images', 'prune', '--events'], '--events only applies'],
+		[['ls', '--', 'x'], 'only applies to shell and exec'],
+		[['--events'], '--events only applies'],
+		[['forward', '--yes'], '--yes does not apply to forward'],
+		[['forward', '5173', '--verbose'], '--verbose does not apply to forward'],
+		[['exec', '--no-cache', '--', 'x'], '--no-cache only applies to rebuild'],
+		[['exec', '--clear', '--', 'x'], '--clear only applies to logs'],
+		[['exec', '--dotfiles', 'u', '--', 'x'], '--dotfiles only applies'],
+		[['exec', '--profile', 'p', '--', 'x'], '--profile only applies'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
 	});
 });

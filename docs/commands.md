@@ -5,7 +5,7 @@ short version of this; inside the TUI, `?` shows the keyboard reference.
 
 ```
 bring [target] <action> [options]   # one operation, directly
-bring <global-command>              # doctor · ls
+bring <global-command>              # doctor · ls · forget · images prune
 bring [section]                     # the full-screen interface
 ```
 
@@ -62,6 +62,152 @@ bring shell -- python3 # any command, interactively
 The shell's exit code passes through, so scripting against it works. The
 workspace must be running (`bring up` first).
 
+### `bring exec`
+
+Runs one command inside the running container without taking over your
+terminal — for scripts, CI steps, and coding agents. Everything after `--`
+is the command:
+
+```sh
+bring exec -- npm test
+bring ../api exec --timeout 300 -- pytest -x
+bring exec --json -- sh -c 'cat package.json | head -5'
+```
+
+- The command is run directly, not through a shell. Pipes, `&&`, `cd`, and
+  other shell builtins (`kill`, `export`…) need `-- sh -c '…'`.
+- Its stdout and stderr pass through byte for byte, live; Bring's one-line
+  summary goes to **stderr**. So `bring exec -- cat data.bin > data.bin`
+  gives you exactly the file.
+- **Exit code**: when the command ran, Bring exits with *the command's own*
+  exit code, so `bring exec -- npm test && deploy` works. A command that
+  does not exist exits 127, with a hint. When Bring could not run it
+  (workspace not running, Docker down), Bring's own codes apply. A command
+  that itself exits 3 therefore looks like a resolution failure; if you
+  must tell them apart, use `--json` and read `outcome` / `error.code` vs
+  `exitCode`.
+- `--timeout <seconds>` (1 to 2147483) stops the command and every process
+  it started inside the container — also ones that moved to their own
+  process group — and exits **124**.
+- Ctrl+C stops the command inside the container too (exit 130), and so does
+  closing its output (`bring exec -- … | head -1`). Plain `docker exec` and
+  `devcontainer exec` leave it running.
+- No terminal and no input: the command gets no TTY and no stdin, and Bring
+  never prompts. Use `bring shell -- <cmd>` for anything interactive.
+- The workspace must be running; `exec` never starts it.
+- Each run's output is saved under Bring's state directory
+  (`logs/<workspace>/exec/`, last 20 runs kept, each capped at 32 MiB with
+  the end of the output preserved) and the path is printed on failure.
+  `bring logs` keeps showing the last `up`/`rebuild` log; `bring logs
+  --clear` deletes the exec logs too.
+- Bring finds the command's processes through an environment variable it
+  sets for them, `BRING_EXEC_ID`. Nothing is written inside the container.
+
+`--json` prints one document instead of streaming:
+
+```jsonc
+{
+  "schemaVersion": 1, "operation": "exec",
+  "outcome": "success",            // Bring ran it: success | failed | interrupted
+  "workspace": "/abs/path", "workspaceName": "api",
+  "durationMs": 4210, "containerIds": ["…"],
+  "message": "npm test exited with code 1",
+  "command": ["npm", "test"],
+  "exitCode": 1,                   // the command's code; absent on failed/interrupted
+  "stdout": "…", "stderr": "…",    // last 16 KiB of each
+  "truncated": { "stdout": false, "stderr": true },
+  "logPath": "…/exec/….log",       // absent if the log could not be written
+  "error": { "code": "COMMAND_TIMEOUT", "summary": "…" }  // failed/interrupted only
+}
+```
+
+`outcome: "success"` with `exitCode: 1` is the normal "tests failed" case:
+Bring did its job, so there is no `error`.
+
+#### `--detach`: servers
+
+`bring exec --detach -- npm run dev` starts the command in the background
+inside the container and returns at once with its pid, where its output
+goes, and the exact command that stops it and every child it spawned
+(printed on stderr):
+
+```
+✓ started npm run dev in api (pid 559)               0.9s
+  Output: bring . exec -- tail -n 100 /tmp/bring-detached-3f2a….log
+  Stop:   bring . exec -- sh -c 'kill -15 -559'
+```
+
+With `--json` the same appears as `pid`, `containerLogPath`, `tailCommand`,
+`stopCommand`, and `warnings`. A command that does not exist in the
+container fails at once (exit 1). Possible warnings:
+
+| Warning | Meaning |
+| ------- | ------- |
+| `DETACH_NO_SETSID` | no `setsid` in the container: the stop command stops the command itself, not its children |
+| `DETACH_NO_LOG` | no writable place for the log (`$TMPDIR`, `/tmp`, `/dev/shm`, `$HOME` were tried): the output is discarded, and `containerLogPath`/`tailCommand` are absent |
+| `DETACH_EXITED` | the command was already gone 0.3 s after starting — it probably failed; check its output |
+
+The log lives inside the container, not in Bring's state directory. Bring
+does not keep track of detached processes; `bring down` stops everything
+anyway. To open the server from your machine, see `bring forward`.
+
+### `bring forward`
+
+Makes a server running inside the container reachable from your machine —
+a Vite or FastAPI dev server, a database, a debugger port — until you
+press Ctrl+C:
+
+```sh
+bring forward                # every port in devcontainer.json "forwardPorts"
+bring forward 5173           # http://localhost:5173 → port 5173 in the container
+bring forward 8080:3000      # your port 8080 → the container's port 3000
+bring forward db:5432        # a Compose service, by its service name
+bring forward 15432:db:5432  # …on a different local port
+```
+
+```
+✓ localhost:5173 → 5173
+Forwarding into api via bash (only this machine can connect) — Ctrl+C to stop.
+```
+
+Why this exists: the Dev Containers CLI ignores `forwardPorts` (only VS Code
+honours it), and the alternative, `appPort`, needs an edit to
+devcontainer.json, a rebuild, and a server that listens on `0.0.0.0`.
+`bring forward` needs none of that: it works with servers that listen only
+on `localhost` inside the container (Vite's default), and changes nothing in
+your project or container.
+
+- It listens on `127.0.0.1` only — other machines on your network cannot
+  connect.
+- It runs in the foreground, like VS Code's forwarding while a window is
+  connected. Keep it in its own terminal tab. There is no background mode.
+- The workspace must be running. If nothing is listening on a port yet, the
+  forwarder says so and keeps going — start the server whenever.
+- After a `bring rebuild`, it finds the new container by itself.
+- If a local port is taken, that port is skipped with a suggestion
+  (`bring forward 5174:5173`); the others keep working.
+- It needs one of `bash`, `node`, or `socat` inside the container (checked
+  in that order). Nearly every dev container image has bash; on a bare
+  Alpine image add it (`apk add bash`).
+- Each new connection costs roughly 0.1 s to set up; data then flows at
+  full speed. Pages that open many connections at once load a little slower
+  than through a published port. At most 48 connections are bridged at the
+  same time; further ones wait their turn.
+- A client that finishes sending and then waits for the answer (`printf … |
+  nc`) gets whatever the server sends in the next 3 s with the bash helper
+  (with node: until the server has been silent for 3 s; with socat: 0.5 s);
+  then the connection is closed. With the bash helper, a server that only
+  answers once it sees the client's end-of-input never answers — node and
+  socat pass the end-of-input on. Browsers and curl are not affected.
+- Not supported: `--json`, UDP, and the labels in `portsAttributes`.
+- Exit codes: 0 after Ctrl+C; 1 if the workspace is not running, its
+  configuration cannot be read, or no port could be opened; 2 for a port
+  that makes no sense or no ports at all; 4 if the container has none of
+  bash, node, socat.
+
+Starting the server from a script or agent? Pair it with
+`bring exec --detach -- npm run dev`.
+
 ### `bring status`
 
 One workspace's live summary: status, containers, image, config, ports.
@@ -106,6 +252,54 @@ source files are untouched; the workspace's captured operation logs are
 cleared with it. An ambiguous name lists the matching paths and asks for
 the full one. In the TUI, `f` on a selected workspace does the same thing
 behind a confirmation.
+
+`--json` prints `{schemaVersion, operation: "forget", outcome, message}`,
+plus `workspace` and `workspaceName` on success, `error` on failure, and
+`candidates` when the name is ambiguous. Exit codes are the same as without
+`--json` (3 not found, 2 ambiguous).
+
+### `bring containers --json` / `bring images --json`
+
+Without `--json` these open the TUI sections. With it they print the same
+inventory as one JSON document — `{schemaVersion, refreshedAt, containers}`
+or `{schemaVersion, refreshedAt, images}` — which is what scripts and agents
+need to explain disk use without being able to change anything. If Docker
+is missing or not answering, the document is `{schemaVersion, outcome:
+"failed", error}` and the exit code is 4 (not installed) or 1 (not
+answering). Each entry has:
+
+- `containers`: `id`, `name`, `state`, `statusText`, `createdAt`, `imageId`,
+  `imageName`, `ports`, `workspacePath`, `workspaceName`, `role`
+  (`primary` | `service`), `serviceName` (Compose services).
+- `images`: `id`, `displayName`, `references`, `createdAt`, `sizeBytes`,
+  `dangling`, `usage` (`attached` | `base` | `unused`), `pruneCandidate`,
+  `containerNames`, `descendantContainerNames`, `workspacePaths`,
+  `workspaceNames`.
+
+### `bring images prune`
+
+Removes exactly what the TUI's `p` selects: Dev Container images that are
+**unused and unnamed** (dangling — typically left over from an old rebuild).
+Cached base images, named images, and pinned (digest-only) images are never
+picked; remove those one by one in the TUI. Attached images can never be
+removed, and Docker gets no `--force`.
+
+```sh
+bring images prune --dry-run   # list them and the most space it could free
+bring images prune             # list, then ask (terminal only)
+bring images prune --yes       # scripts: no prompt
+```
+
+Without `--yes` it asks first in a terminal; where it cannot ask (no
+terminal, or `--json`) it changes nothing and exits 2. `--dry-run` and
+`--yes` together are a usage error. `--json` prints `{schemaVersion,
+operation: "prune", dryRun, candidates: [{id, displayName, sizeBytes}],
+upToBytes, outcome, message}`, plus `removedIds` after a removal and `error`
+on failure. The size is an upper bound: layers shared with other images are
+not freed. With Docker's containerd image store (the default on a fresh
+Docker Engine 29 install), a rebuild did not leave the replaced image behind
+in our testing, so there is often nothing to prune; the classic store does
+leave them.
 
 ## The full-screen interface
 
@@ -179,12 +373,50 @@ automatically.
 | ------ | ------ |
 | `--json` | machine-readable output, never animated |
 | `--verbose` | stream the underlying devcontainer/docker output live |
+| `--events` | up/rebuild/down/remove: progress as JSON lines (see below) |
 | `--config <path>` | use an explicit devcontainer.json (remembered) |
-| `--yes`, `-y` | skip the `remove` confirmation |
+| `--yes`, `-y` | skip the `remove` / `images prune` confirmation |
+| `--dry-run` | `images prune`: show what would be removed, change nothing |
 | `--no-cache` | rebuild without the Docker build cache |
+| `--timeout <seconds>` | exec: stop the command after N seconds (exit 124) |
+| `--detach` | exec: start in the background, print pid and stop command |
 | `--dotfiles <repo\|none>` | dotfiles repo for up/rebuild (remembered) |
 | `--profile <name\|none>` | dotfiles profile for up/rebuild (see Profiles) |
 | `--help`, `-h` / `--version`, `-v` | help / version |
+
+## Progress for programs: `--events`
+
+`--json` stays silent until the operation ends — fine for `status`, but a
+`bring up` that builds an image can take minutes. `--events` prints each
+step as it happens, one JSON object per line (NDJSON) on stdout:
+
+```sh
+bring up --events
+```
+
+```
+{"schemaVersion":1,"type":"started","operation":"up","workspaceName":"api"}
+{"schemaVersion":1,"type":"stage","stage":"building","message":"Building api…"}
+{"schemaVersion":1,"type":"stage","stage":"ready","message":"api is ready"}
+{"schemaVersion":1,"type":"completed","result":{"operation":"up","outcome":"success",…}}
+```
+
+- Stages: `validating`, `reading-config`, `building`, `creating`, `starting`,
+  `running-hooks`, `stopping`, `removing`, `ready`.
+- The last line is always `type: "completed"`, and its `result` is exactly
+  what `--json` would print. Wait for it; its `outcome` and the exit code
+  tell you how it went. A run that ends before the operation starts —
+  the target cannot be resolved, Docker is missing, `remove` lacks `--yes`,
+  a dotfiles profile needs choosing — still prints a single `completed`
+  line, whose `result` holds just `outcome: "failed"` and the `error`.
+- With `--verbose`, raw build output arrives as `type: "output"` lines
+  (`stream`, `chunk`). Without it they are left out — build logs are big.
+- Like `--json`, it never prompts: `remove` needs `--yes`, and a dotfiles
+  profile choice must be made with `--profile`.
+- Not combinable with `--json`. Only for `up`, `rebuild`, `down`, `remove`.
+
+Coding agents that run `bring up` in the background can read this stream to
+tell "still building" from "stuck".
 
 ## Exit codes
 
@@ -196,7 +428,11 @@ automatically.
 | 3 | workspace/configuration resolution failed |
 | 4 | a required dependency is missing or unreachable (`bring doctor`) |
 | 5 | internal Bring error |
+| 124 | `bring exec --timeout` stopped the command |
 | 130 | interrupted with Ctrl+C |
+
+`bring exec` (and `bring shell`) exit with the command's own exit code when
+the command ran; the table applies when Bring itself failed.
 
 ## Update notifications
 

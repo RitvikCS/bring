@@ -13,6 +13,7 @@ export type BringErrorCode =
 	| 'OPERATION_CONFLICT'
 	| 'DEVCONTAINER_FAILED'
 	| 'DOCKER_FAILED'
+	| 'COMMAND_TIMEOUT'
 	| 'USER_CANCELLED'
 	| 'INTERRUPTED'
 	| 'INTERNAL_ERROR';
@@ -46,6 +47,8 @@ export function exitCodeForProblem(code: BringErrorCode): number {
 			return 130;
 		case 'INTERNAL_ERROR':
 			return 5;
+		case 'COMMAND_TIMEOUT':
+			return 124;
 		case 'OPERATION_CONFLICT':
 		case 'DEVCONTAINER_FAILED':
 		case 'DOCKER_FAILED':
