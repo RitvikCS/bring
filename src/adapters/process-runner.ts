@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
 export interface RunOptions {
 	cwd?: string;
@@ -12,6 +13,14 @@ export interface RunOptions {
 	stdio?: 'capture' | 'inherit';
 	/** Aborting kills the child (SIGTERM); the run then settles normally. */
 	signal?: AbortSignal;
+	/** Called with each chunk's exact bytes, before any decoding. */
+	onRawOutput?: (stream: 'stdout' | 'stderr', chunk: Buffer) => void;
+	/**
+	 * false: do not accumulate output in the result (stdout/stderr/combined
+	 * stay empty) — for callers that stream it elsewhere via onRawOutput, so
+	 * a long-running command cannot grow Bring's memory without bound.
+	 */
+	accumulate?: boolean;
 }
 
 export interface RunResult {
@@ -80,18 +89,31 @@ export function runCommand(
 			}
 		};
 
-		child.stdout?.on('data', (chunk: Buffer) => {
-			const text = chunk.toString();
-			stdout += text;
-			combined += text;
-			options.onOutput?.('stdout', text);
-		});
-		child.stderr?.on('data', (chunk: Buffer) => {
-			const text = chunk.toString();
-			stderr += text;
-			combined += text;
-			options.onOutput?.('stderr', text);
-		});
+		const accumulate = options.accumulate !== false;
+		// One decoder per stream: a multi-byte character split across two
+		// chunks must not turn into replacement characters.
+		const decoders = {
+			stdout: new StringDecoder('utf8'),
+			stderr: new StringDecoder('utf8'),
+		};
+		const onChunk = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
+			options.onRawOutput?.(stream, chunk);
+			if (!accumulate && options.onOutput === undefined) {
+				return;
+			}
+			const text = decoders[stream].write(chunk);
+			if (accumulate) {
+				if (stream === 'stdout') {
+					stdout += text;
+				} else {
+					stderr += text;
+				}
+				combined += text;
+			}
+			options.onOutput?.(stream, text);
+		};
+		child.stdout?.on('data', onChunk('stdout'));
+		child.stderr?.on('data', onChunk('stderr'));
 
 		child.on('error', (error) => {
 			if (settled) {

@@ -8,7 +8,12 @@ import {
 import { bringDown } from '../application/bring-down.js';
 import { bringUp } from '../application/bring-up.js';
 import type { OperationContext } from '../application/context.js';
-import { execCommand, startDetached } from '../application/exec-command.js';
+import {
+	type DetachResult,
+	type ExecResult,
+	execCommand,
+	startDetached,
+} from '../application/exec-command.js';
 import { getSnapshot } from '../application/get-status.js';
 import { openShell } from '../application/open-shell.js';
 import {
@@ -436,64 +441,110 @@ async function runExecRoute(
 			config: workspace.configPath,
 		});
 		if (io.json) {
-			console.log(
-				formatResultJson(result, {
-					command: result.command,
-					...(result.pid === undefined
-						? {}
-						: {
-								pid: result.pid,
-								containerLogPath: result.containerLogPath,
-								stopCommand: result.stopCommand,
-								tailCommand: result.tailCommand,
-							}),
-					warnings: result.warnings,
-				}),
-			);
+			console.log(formatResultJson(result, detachExtras(result)));
 			return exitFor(result);
 		}
 		console.error(formatResult(result, { color: io.color }));
 		if (result.outcome === 'success') {
-			console.error(`  Output: ${result.tailCommand}`);
-			console.error(`  Stop:   ${result.stopCommand}`);
-			if (result.warnings.includes('DETACH_NO_SETSID')) {
-				console.error(
-					'  (no setsid in this container — stopping may leave child processes)',
-				);
+			if (result.tailCommand !== undefined) {
+				console.error(`  Output: ${result.tailCommand}`);
 			}
-			console.error(
-				`  Reach a server from this machine: bring ${workspace.input || '.'} forward <port>`,
-			);
+			console.error(`  Stop:   ${result.stopCommand}`);
+			const notes: Record<string, string> = {
+				DETACH_NO_SETSID:
+					'no setsid in this container — the stop command stops the command itself, not its children',
+				DETACH_NO_LOG:
+					'no writable place for a log in this container — the output is discarded',
+				DETACH_EXITED:
+					'it is no longer running — check its output, it may have failed to start',
+			};
+			for (const warning of result.warnings) {
+				if (notes[warning] !== undefined) {
+					console.error(`  (${notes[warning]})`);
+				}
+			}
 		}
 		return exitFor(result);
 	}
 
+	// A closed output pipe (`bring exec -- … | head -1`) must stop the
+	// command inside the container, not crash Bring with EPIPE.
+	const cancel = new AbortController();
+	const onPipeError = (error: NodeJS.ErrnoException) => {
+		if (error.code === 'EPIPE') {
+			cancel.abort();
+		}
+	};
+	process.stdout.on('error', onPipeError);
+	process.stderr.on('error', onPipeError);
 	const result = await execCommand(ctx, workspace, command, {
 		config: workspace.configPath,
 		timeoutMs:
 			route.options.timeoutSeconds === undefined
 				? undefined
 				: route.options.timeoutSeconds * 1000,
+		cancel: cancel.signal,
+		// The exact bytes the command wrote: `bring exec -- cat x > y` must
+		// reproduce binary files.
 		onOutput: io.json
 			? undefined
 			: (stream, chunk) => {
-					(stream === 'stdout' ? process.stdout : process.stderr).write(chunk);
+					if (!cancel.signal.aborted) {
+						(stream === 'stdout' ? process.stdout : process.stderr).write(
+							chunk,
+						);
+					}
 				},
 	});
+	if (cancel.signal.aborted) {
+		// Nobody is reading; say nothing more.
+		return EXIT.interrupted;
+	}
+	process.stdout.removeListener('error', onPipeError);
+	process.stderr.removeListener('error', onPipeError);
 	if (io.json) {
-		console.log(
-			formatResultJson(result, {
-				command: result.command,
-				...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
-				stdout: result.stdout,
-				stderr: result.stderr,
-				truncated: result.truncated,
-			}),
-		);
+		console.log(formatResultJson(result, execExtras(result)));
 	} else {
 		// Summary on stderr only: stdout is exactly the command's output.
 		console.error(formatExecSummary(result, { color: io.color }));
 	}
+	return exitCodeForExec(result);
+}
+
+/** The exec-specific fields of the `--json` document (P4 §2.5). */
+export function execExtras(result: ExecResult): Record<string, unknown> {
+	return {
+		command: result.command,
+		...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+		stdout: result.stdout,
+		stderr: result.stderr,
+		truncated: result.truncated,
+	};
+}
+
+/** The detach-specific fields of the `--json` document (P4 §2.6). */
+export function detachExtras(result: DetachResult): Record<string, unknown> {
+	return {
+		command: result.command,
+		...(result.pid === undefined ? {} : { pid: result.pid }),
+		...(result.containerLogPath === undefined
+			? {}
+			: { containerLogPath: result.containerLogPath }),
+		...(result.stopCommand === undefined
+			? {}
+			: { stopCommand: result.stopCommand }),
+		...(result.tailCommand === undefined
+			? {}
+			: { tailCommand: result.tailCommand }),
+		warnings: result.warnings,
+	};
+}
+
+/**
+ * DD-6: when the command ran, its own exit code is Bring's — in plain and
+ * --json mode alike. When Bring could not run it, Bring's codes apply.
+ */
+export function exitCodeForExec(result: ExecResult): number {
 	if (result.outcome === 'success') {
 		return result.exitCode ?? EXIT.success;
 	}
