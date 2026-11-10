@@ -21,7 +21,7 @@ import {
 	resolveRunDotfiles,
 } from '../application/profiles.js';
 import { resolveTarget } from '../application/resolve-target.js';
-import { exitCodeForProblem } from '../core/errors.js';
+import { type BringProblem, exitCodeForProblem } from '../core/errors.js';
 import type {
 	OperationEvent,
 	OperationResult,
@@ -99,6 +99,13 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 			devcontainerExe === null ? 'the Dev Containers CLI' : 'Docker';
 		console.error(`Bring needs ${missing}, which was not found on PATH.`);
 		console.error('Run `bring doctor` for the full picture.');
+		if (events) {
+			emitEarlyCompleted({
+				code: 'DEPENDENCY_MISSING',
+				summary: `Bring needs ${missing}, which was not found on PATH.`,
+				remedy: 'bring doctor',
+			});
+		}
 		return EXIT.dependency;
 	}
 
@@ -150,6 +157,13 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 			console.error(
 				'remove deletes containers — confirm with --yes when not running interactively.',
 			);
+			if (events) {
+				emitEarlyCompleted({
+					code: 'USAGE_ERROR',
+					summary: 'remove deletes containers and needs confirming.',
+					remedy: 'Pass --yes',
+				});
+			}
 			return EXIT.usage;
 		}
 		if (confirmed === 'no') {
@@ -170,6 +184,9 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 			paint,
 		});
 		if (settled.outcome === 'exit') {
+			if (events && settled.problem !== undefined) {
+				emitEarlyCompleted(settled.problem);
+			}
 			return settled.code;
 		}
 		dotfiles = settled.dotfiles;
@@ -259,7 +276,7 @@ export async function runDirect(route: DirectRoute): Promise<number> {
 }
 
 type SettledDotfiles =
-	| { outcome: 'exit'; code: number }
+	| { outcome: 'exit'; code: number; problem?: BringProblem }
 	| { outcome: 'run'; dotfiles: ResolvedDotfiles | null };
 
 /**
@@ -286,7 +303,11 @@ async function settleDirectDotfiles(
 		if (loaded.problem.remedy !== undefined) {
 			console.error(loaded.problem.remedy);
 		}
-		return { outcome: 'exit', code: exitCodeForProblem(loaded.problem.code) };
+		return {
+			outcome: 'exit',
+			code: exitCodeForProblem(loaded.problem.code),
+			problem: loaded.problem,
+		};
 	}
 	const config = loaded.config;
 	const state = loadState(stateFile);
@@ -311,7 +332,15 @@ async function settleDirectDotfiles(
 			console.error(
 				'Pass --profile <name> (or --profile none), or set a default in the TUI: bring profiles',
 			);
-			return { outcome: 'exit', code: EXIT.usage };
+			return {
+				outcome: 'exit',
+				code: EXIT.usage,
+				problem: {
+					code: 'USAGE_ERROR',
+					summary: `Several dotfiles profiles exist (${resolution.names.join(', ')}) and none is the default.`,
+					remedy: 'Pass --profile <name> or --profile none',
+				},
+			};
 		}
 		const chosen = await chooseProfileInteractively(resolution.names);
 		if (chosen === null) {
@@ -332,6 +361,7 @@ async function settleDirectDotfiles(
 			return {
 				outcome: 'exit',
 				code: exitCodeForProblem(resolution.problem.code),
+				problem: resolution.problem,
 			};
 		}
 		return { outcome: 'run', dotfiles: null };
@@ -347,7 +377,15 @@ async function settleDirectDotfiles(
 				`First use of dotfiles profile ${resolved.profileName}: confirm it with --yes or skip it with --profile none.`,
 			);
 			printProfileSummary(resolved, console.error);
-			return { outcome: 'exit', code: EXIT.usage };
+			return {
+				outcome: 'exit',
+				code: EXIT.usage,
+				problem: {
+					code: 'USAGE_ERROR',
+					summary: `First use of dotfiles profile ${resolved.profileName} needs confirming.`,
+					remedy: 'Pass --yes to confirm it, or --profile none to skip it',
+				},
+			};
 		}
 		console.error(
 			`First use of dotfiles profile ${resolved.profileName} — it will run inside the container:`,
@@ -551,6 +589,31 @@ export function exitCodeForExec(result: ExecResult): number {
 	return exitFor(result);
 }
 
+/**
+ * `--events` promises that the last line is always `completed`. When a run
+ * ends before any operation starts (unresolved target, missing Docker, a
+ * confirmation that cannot be asked), nothing has emitted one — so emit it
+ * here, or a reader waiting for it would wait forever.
+ */
+export function earlyCompletedLine(problem: BringProblem): string {
+	return JSON.stringify({
+		schemaVersion: 1,
+		type: 'completed',
+		result: {
+			outcome: 'failed',
+			error: {
+				code: problem.code,
+				summary: problem.summary,
+				...(problem.remedy === undefined ? {} : { remedy: problem.remedy }),
+			},
+		},
+	});
+}
+
+function emitEarlyCompleted(problem: BringProblem): void {
+	process.stdout.write(`${earlyCompletedLine(problem)}\n`);
+}
+
 function exitFor(result: OperationResult): number {
 	switch (result.outcome) {
 		case 'success':
@@ -574,20 +637,7 @@ function reportResolutionFailure(
 	io: { json: boolean; events: boolean },
 ): number {
 	if (io.events) {
-		// Nothing started, but a reader waiting for `completed` must get one.
-		process.stdout.write(
-			`${JSON.stringify({
-				schemaVersion: 1,
-				type: 'completed',
-				result: {
-					outcome: 'failed',
-					error: {
-						code: resolved.problem.code,
-						summary: resolved.problem.summary,
-					},
-				},
-			})}\n`,
-		);
+		emitEarlyCompleted(resolved.problem);
 		return exitCodeForProblem(resolved.problem.code);
 	}
 	if (io.json) {

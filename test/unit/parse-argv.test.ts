@@ -289,3 +289,48 @@ describe('parseArgv — forward (Phase 4)', () => {
 		});
 	});
 });
+
+describe('parseArgv — review fixes', () => {
+	it.each([
+		['1e3'],
+		['0x10'],
+		['2147484'],
+		['99999999'],
+		['-5'],
+		['5s'],
+		[' 5'],
+	])('rejects --timeout %j', (value) => {
+		expect(parseArgv(['exec', '--timeout', value, '--', 'x'])).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining('from 1 to 2147483'),
+		});
+	});
+
+	it('accepts the largest timeout a timer can hold', () => {
+		expect(
+			parseArgv(['exec', '--timeout', '2147483', '--', 'x']),
+		).toMatchObject({ options: { timeoutSeconds: 2147483 } });
+	});
+
+	it.each([
+		[['ls', '--events'], '--events only applies to up'],
+		[['doctor', '--detach'], '--detach only applies to exec'],
+		[['forget', 'api', '--timeout', '5'], '--timeout only applies to exec'],
+		[['containers', '--json', '--events'], '--events only applies'],
+		[['images', '--dry-run'], '--dry-run only applies to `bring images prune`'],
+		[['images', 'prune', '--events'], '--events only applies'],
+		[['ls', '--', 'x'], 'only applies to shell and exec'],
+		[['--events'], '--events only applies'],
+		[['forward', '--yes'], '--yes does not apply to forward'],
+		[['forward', '5173', '--verbose'], '--verbose does not apply to forward'],
+		[['exec', '--no-cache', '--', 'x'], '--no-cache only applies to rebuild'],
+		[['exec', '--clear', '--', 'x'], '--clear only applies to logs'],
+		[['exec', '--dotfiles', 'u', '--', 'x'], '--dotfiles only applies'],
+		[['exec', '--profile', 'p', '--', 'x'], '--profile only applies'],
+	])('rejects %j', (argv, fragment) => {
+		expect(parseArgv(argv)).toMatchObject({
+			kind: 'usage-error',
+			message: expect.stringContaining(fragment),
+		});
+	});
+});

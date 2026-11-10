@@ -139,12 +139,16 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				break;
 			case '--timeout': {
 				const value = head[i + 1];
-				const seconds = value === undefined ? Number.NaN : Number(value);
-				if (!Number.isInteger(seconds) || seconds <= 0) {
+				// Digits only (no 1e3 or 0x10), and within what a timer can
+				// hold: a larger value would overflow and fire at once.
+				const seconds =
+					value !== undefined && /^\d{1,7}$/.test(value)
+						? Number(value)
+						: Number.NaN;
+				if (!(seconds >= 1 && seconds <= MAX_TIMEOUT_SECONDS)) {
 					return {
 						kind: 'usage-error',
-						message:
-							'--timeout needs a whole number of seconds, e.g. --timeout 120',
+						message: `--timeout needs a whole number of seconds from 1 to ${MAX_TIMEOUT_SECONDS}, e.g. --timeout 120`,
 					};
 				}
 				options.timeoutSeconds = seconds;
@@ -202,10 +206,22 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 				message: TOKENS_AFTER_SEPARATOR,
 			};
 		}
-		return { kind: 'tui' };
+		const stray = strayActionFlag(options, {});
+		return stray === undefined ? { kind: 'tui' } : usage(stray);
 	}
 
 	const first = positionals[0] as string;
+
+	// Commands that are not workspace actions take none of the action-only
+	// flags; say so instead of ignoring them.
+	if (GLOBAL_COMMANDS.has(first) || SECTIONS.has(first)) {
+		const stray = strayActionFlag(options, {
+			dryRun: first === 'images' && positionals[1] === 'prune',
+		});
+		if (stray !== undefined) {
+			return usage(stray);
+		}
+	}
 
 	if (first === 'doctor') {
 		return positionals.length === 1
@@ -291,6 +307,14 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 		if (options.json) {
 			return usage('--json does not apply to forward — it runs until Ctrl+C.');
 		}
+		for (const [set, flag] of [
+			[options.yes, '--yes'],
+			[options.verbose, '--verbose'],
+		] as const) {
+			if (set) {
+				return usage(`${flag} does not apply to forward.`);
+			}
+		}
 	} else if (extra !== undefined) {
 		return usage(`Unexpected argument \`${extra}\`.`);
 	}
@@ -353,6 +377,34 @@ export function parseArgv(argv: readonly string[]): CliRoute {
 	}
 
 	return { kind: 'direct', target, action, options };
+}
+
+/** setTimeout holds at most 2^31-1 ms (about 24.8 days). */
+export const MAX_TIMEOUT_SECONDS = 2_147_483;
+
+const GLOBAL_COMMANDS = new Set(['doctor', 'ls', 'forget']);
+
+function strayActionFlag(
+	options: DirectOptions,
+	allowed: { dryRun?: boolean },
+): string | undefined {
+	const stray: [boolean, string, string][] = [
+		[options.events, '--events', 'up, rebuild, down, and remove'],
+		[options.detach, '--detach', 'exec'],
+		[options.timeoutSeconds !== undefined, '--timeout', 'exec'],
+		[
+			options.dryRun && allowed.dryRun !== true,
+			'--dry-run',
+			'`bring images prune`',
+		],
+		[options.shellCommand !== undefined, '`--`', 'shell and exec'],
+	];
+	for (const [set, flag, where] of stray) {
+		if (set) {
+			return `${flag} only applies to ${where}.`;
+		}
+	}
+	return undefined;
 }
 
 const EVENT_ACTIONS = new Set<DirectAction>([

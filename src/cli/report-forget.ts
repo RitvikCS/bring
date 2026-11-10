@@ -63,6 +63,7 @@ export function forgetDocument(result: ForgetResult): {
 				doc: {
 					...base,
 					outcome: 'failed',
+					message: `No remembered workspace matches \`${result.target}\`.`,
 					error: {
 						code: 'WORKSPACE_NOT_FOUND',
 						summary: `No remembered workspace matches \`${result.target}\`.`,
@@ -76,6 +77,7 @@ export function forgetDocument(result: ForgetResult): {
 				doc: {
 					...base,
 					outcome: 'failed',
+					message: `\`${result.target}\` matches several remembered workspaces.`,
 					candidates: result.candidates,
 					error: {
 						code: 'USAGE_ERROR',

@@ -73,11 +73,30 @@ export function planPrune(images: readonly DevContainerImageResource[]): {
 	};
 }
 
-function dockerOrExplain(): string | null {
+function dockerOrExplain(json: boolean): string | null {
 	const docker = findExecutable('docker', process.env.PATH);
 	if (docker === null) {
-		console.error('Bring needs Docker, which was not found on PATH.');
-		console.error('Run `bring doctor` for the full picture.');
+		const summary = 'Bring needs Docker, which was not found on PATH.';
+		if (json) {
+			console.log(
+				JSON.stringify(
+					{
+						schemaVersion: 1,
+						outcome: 'failed',
+						error: {
+							code: 'DEPENDENCY_MISSING',
+							summary,
+							remedy: 'bring doctor',
+						},
+					},
+					null,
+					2,
+				),
+			);
+		} else {
+			console.error(summary);
+			console.error('Run `bring doctor` for the full picture.');
+		}
 	}
 	return docker;
 }
@@ -90,7 +109,7 @@ function knownWorkspacePaths(): string[] {
 export async function runInventory(
 	section: 'containers' | 'images',
 ): Promise<number> {
-	const dockerExe = dockerOrExplain();
+	const dockerExe = dockerOrExplain(true);
 	if (dockerExe === null) {
 		return EXIT.dependency;
 	}
@@ -128,7 +147,7 @@ export async function runPrune(route: {
 	yes: boolean;
 	dryRun: boolean;
 }): Promise<number> {
-	const dockerExe = dockerOrExplain();
+	const dockerExe = dockerOrExplain(route.json);
 	if (dockerExe === null) {
 		return EXIT.dependency;
 	}

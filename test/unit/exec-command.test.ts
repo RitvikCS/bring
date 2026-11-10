@@ -440,7 +440,7 @@ describe('exec scripts', () => {
 		expect(script.indexOf('( : > "$f" )')).toBeLessThan(
 			script.indexOf('setsid "$@"'),
 		);
-		expect(script).toContain('"${TMPDIR:-/tmp}" /tmp /dev/shm "$HOME"');
+		expect(script).toContain('for d in "$TMPDIR" /tmp /dev/shm "$HOME"');
 		expect(script).toContain('bring-detached-abc.log');
 		expect(script).toContain('echo "bring:pid=$pid"');
 	});

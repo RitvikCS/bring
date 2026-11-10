@@ -413,7 +413,8 @@ export function detachScript(id: string): string {
 	return [
 		'command -v "$1" >/dev/null 2>&1 || { echo "bring:missing"; exit 127; }',
 		'log=',
-		'for d in "${TMPDIR:-/tmp}" /tmp /dev/shm "$HOME"; do',
+		'for d in "$TMPDIR" /tmp /dev/shm "$HOME"; do',
+		'  [ -n "$d" ] || continue',
 		`  f="$d/bring-detached-${id}.log"`,
 		'  if ( : > "$f" ) 2>/dev/null; then log="$f"; break; fi',
 		'done',

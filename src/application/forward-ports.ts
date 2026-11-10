@@ -1,4 +1,9 @@
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import {
+	type ChildProcess,
+	type ChildProcessWithoutNullStreams,
+	type SpawnOptionsWithoutStdio,
+	spawn,
+} from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
 
 // `bring forward` (P4 §3a, DD-7): make devcontainer.json `forwardPorts`
@@ -135,7 +140,10 @@ export function bridgeArgv(
 					's.on("error",e=>{process.stderr.write(String(e.message)+"\\n");process.exit(1)});',
 					'process.stdin.pipe(s);s.pipe(process.stdout);',
 					's.on("close",()=>process.exit(0));',
-					`process.stdin.on("end",()=>setTimeout(()=>process.exit(0),${BRIDGE_LINGER_SECONDS * 1000}));`,
+					// After the client's end-of-input, leave once the server has
+					// been silent for the linger; data restarts the wait.
+					`let t;const arm=()=>{clearTimeout(t);t=setTimeout(()=>process.exit(0),${BRIDGE_LINGER_SECONDS * 1000})};`,
+					'process.stdin.on("end",()=>{arm();s.on("data",arm)});',
 				].join(''),
 				targetHost,
 				String(targetPort),
@@ -143,18 +151,73 @@ export function bridgeArgv(
 	}
 }
 
+/**
+ * Parse port tokens into specs, dropping exact repeats. Two different
+ * targets on one local port cannot both be served.
+ */
+export function resolveSpecs(
+	tokens: readonly (string | number)[],
+): { ok: true; specs: ForwardSpec[] } | { ok: false; error: string } {
+	const specs: ForwardSpec[] = [];
+	for (const token of tokens) {
+		const parsed = parsePortSpec(token);
+		if ('error' in parsed) {
+			return { ok: false, error: parsed.error };
+		}
+		const clash = specs.find((s) => s.hostPort === parsed.hostPort);
+		if (clash === undefined) {
+			specs.push(parsed);
+		} else if (
+			clash.targetHost !== parsed.targetHost ||
+			clash.targetPort !== parsed.targetPort
+		) {
+			return {
+				ok: false,
+				error: `localhost:${parsed.hostPort} is asked for twice (${describeSpec(clash)} and ${describeSpec(parsed)}). Give one of them another local port, e.g. ${parsed.hostPort + 1}:${parsed.targetHost === '127.0.0.1' ? '' : `${parsed.targetHost}:`}${parsed.targetPort}.`,
+			};
+		}
+	}
+	return { ok: true, specs };
+}
+
+const spawnFailures = new WeakMap<ChildProcess, Error>();
+
+/**
+ * Spawn one bridge process. A failed spawn (no file handles left, binary
+ * gone) is emitted as an `error` event on the next tick — before an async
+ * caller can attach a listener, which would crash the whole forwarder. So
+ * the failure is caught here and handed to startForwarding.
+ */
+export function spawnBridge(
+	command: string,
+	args: readonly string[],
+	options: SpawnOptionsWithoutStdio = {},
+): ChildProcessWithoutNullStreams {
+	const child = spawn(command, args, options);
+	child.once('error', (error) => spawnFailures.set(child, error));
+	return child;
+}
+
 export type ForwardEvent =
 	| { type: 'listening'; spec: ForwardSpec }
 	| { type: 'listen-failed'; spec: ForwardSpec; code: string; message: string }
 	| { type: 'connection-failed'; spec: ForwardSpec; message: string };
 
+/**
+ * Bridges open at once, across all ports. Each costs about four file
+ * handles on the host (macOS allows 256 by default); connections beyond
+ * the cap wait their turn instead of failing.
+ */
+export const MAX_BRIDGES = 48;
+
 export interface ForwardOptions {
 	specs: readonly ForwardSpec[];
-	/** Start one bridge for one accepted connection. */
+	/** Start one bridge for one accepted connection — use `spawnBridge`. */
 	openBridge: (spec: ForwardSpec) => Promise<ChildProcessWithoutNullStreams>;
 	onEvent: (event: ForwardEvent) => void;
 	/** After the client leaves, how long the bridge may take to exit. */
 	bridgeGraceMs?: number;
+	maxBridges?: number;
 }
 
 export interface Forwarding {
@@ -166,7 +229,8 @@ export interface Forwarding {
 /**
  * Bind every spec on 127.0.0.1 — never 0.0.0.0, so nothing on the LAN can
  * reach the container — and bridge each connection. A port that cannot be
- * bound is reported and skipped; the others keep working.
+ * bound is reported and skipped; the others keep working. No single
+ * connection's failure stops the forwarder.
  */
 export async function startForwarding(
 	options: ForwardOptions,
@@ -176,14 +240,44 @@ export async function startForwarding(
 	const bridges = new Set<ChildProcessWithoutNullStreams>();
 	const sockets = new Set<Socket>();
 	const grace = options.bridgeGraceMs ?? (BRIDGE_LINGER_SECONDS + 2) * 1000;
+	const maxBridges = options.maxBridges ?? MAX_BRIDGES;
+	let active = 0;
+	const waiting: (() => void)[] = [];
+	const release = () => {
+		active--;
+		while (active < maxBridges && waiting.length > 0) {
+			(waiting.shift() as () => void)();
+		}
+	};
 
-	const handle = (spec: ForwardSpec, socket: Socket) => {
-		sockets.add(socket);
-		socket.on('close', () => sockets.delete(socket));
-		socket.on('error', () => {});
-		socket.pause();
+	const bridge = (spec: ForwardSpec, socket: Socket) => {
+		if (socket.destroyed) {
+			return; // the client gave up while waiting for a free bridge
+		}
+		active++;
+		let released = false;
+		const done = () => {
+			if (!released) {
+				released = true;
+				release();
+			}
+		};
+		const failed = (message: string) => {
+			socket.destroy();
+			options.onEvent({ type: 'connection-failed', spec, message });
+			done();
+		};
 		options.openBridge(spec).then(
 			(child) => {
+				const early =
+					spawnFailures.get(child) ??
+					(child.pid === undefined
+						? new Error('the bridge process could not be started')
+						: undefined);
+				if (early !== undefined) {
+					failed(early.message);
+					return;
+				}
 				bridges.add(child);
 				let stderr = '';
 				let sentBytes = 0;
@@ -215,26 +309,29 @@ export async function startForwarding(
 							message: stderr.trim(),
 						});
 					}
+					done();
 				});
 				child.on('error', (error) => {
 					bridges.delete(child);
-					socket.destroy();
-					options.onEvent({
-						type: 'connection-failed',
-						spec,
-						message: error.message,
-					});
+					failed(error.message);
 				});
 			},
 			(error: unknown) => {
-				socket.destroy();
-				options.onEvent({
-					type: 'connection-failed',
-					spec,
-					message: error instanceof Error ? error.message : String(error),
-				});
+				failed(error instanceof Error ? error.message : String(error));
 			},
 		);
+	};
+
+	const handle = (spec: ForwardSpec, socket: Socket) => {
+		sockets.add(socket);
+		socket.on('close', () => sockets.delete(socket));
+		socket.on('error', () => {});
+		socket.pause();
+		if (active >= maxBridges) {
+			waiting.push(() => bridge(spec, socket));
+		} else {
+			bridge(spec, socket);
+		}
 	};
 
 	for (const spec of options.specs) {
@@ -243,6 +340,8 @@ export async function startForwarding(
 		const server = createServer({ allowHalfOpen: true }, (socket) =>
 			handle(spec, socket),
 		);
+		// A failure to accept (no file handles left) must not be fatal.
+		server.on('error', () => {});
 		const bound = await new Promise<boolean>((resolve) => {
 			server.once('error', (error: NodeJS.ErrnoException) => {
 				options.onEvent({
@@ -265,6 +364,7 @@ export async function startForwarding(
 	return {
 		listening,
 		close: async () => {
+			waiting.length = 0;
 			for (const socket of sockets) {
 				socket.destroy();
 			}

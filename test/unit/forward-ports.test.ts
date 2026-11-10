@@ -1,17 +1,29 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
+import {
+	type ChildProcessWithoutNullStreams,
+	spawn,
+	spawnSync,
+} from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { type AddressInfo, createServer as createNetServer } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, it as baseIt, describe, expect, it } from 'vitest';
 import {
 	bridgeArgv,
 	explainConnectionFailure,
 	type ForwardEvent,
 	type Forwarding,
 	type ForwardSpec,
+	HELPERS,
 	type Helper,
+	PROBE_SCRIPT,
 	parsePortSpec,
+	resolveSpecs,
+	spawnBridge,
 	startForwarding,
 } from '../../src/application/forward-ports.js';
+import {
+	extractForwardPorts,
+	interpretProbe,
+} from '../../src/cli/run-forward.js';
 
 describe('parsePortSpec', () => {
 	it.each([
@@ -79,11 +91,8 @@ describe('explainConnectionFailure', () => {
 // The bridges below run for real on this machine — the same argv bring runs
 // inside the container, minus `docker exec -i <id>`. Detached, because the
 // bash bridge ends with `kill 0` (its own process group, as under exec).
-async function hasCommand(name: string): Promise<boolean> {
-	return new Promise((resolve) => {
-		const child = spawn('sh', ['-c', `command -v ${name}`]);
-		child.on('close', (code) => resolve(code === 0));
-	});
+function hasCommand(name: string): boolean {
+	return spawnSync('sh', ['-c', `command -v ${name}`]).status === 0;
 }
 
 const open: Forwarding[] = [];
@@ -149,8 +158,9 @@ describe.each([
 	'bash',
 	'node',
 ] as const)('startForwarding via the %s bridge', (helper) => {
+	// Skipped — visibly — where the helper is not installed.
+	const it = hasCommand(helper) ? baseIt : baseIt.skip;
 	it('serves HTTP through the bridge and the bridge exits afterwards', async () => {
-		if (!(await hasCommand(helper))) return;
 		const target = await httpServer('hello from the container');
 		const { hostPort, bridge } = await forward(helper, target);
 		for (let i = 0; i < 3; i++) {
@@ -165,7 +175,6 @@ describe.each([
 	});
 
 	it('delivers the reply to a client that stops sending first (half-close)', async () => {
-		if (!(await hasCommand(helper))) return;
 		// Replies 300 ms after the request, then closes. allowHalfOpen: like a
 		// real server that supports it, keep the socket writable after the
 		// client's end-of-input (the node bridge passes that on).
@@ -201,7 +210,6 @@ describe.each([
 	});
 
 	it('reports a refused connection without stopping the forwarder', async () => {
-		if (!(await hasCommand(helper))) return;
 		const dead = await freePort();
 		const { hostPort, events } = await forward(helper, dead);
 		await fetch(`http://127.0.0.1:${hostPort}/`).catch(() => undefined);
@@ -267,5 +275,144 @@ describe('startForwarding', () => {
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		expect(bridge.spawned.every(exited)).toBe(true);
 		socket.destroy();
+	});
+});
+
+describe('resolveSpecs', () => {
+	it('drops exact repeats', () => {
+		expect(resolveSpecs(['5173', 5173, '5173:5173'])).toEqual({
+			ok: true,
+			specs: [{ hostPort: 5173, targetHost: '127.0.0.1', targetPort: 5173 }],
+		});
+	});
+
+	it('refuses two different targets on one local port, with a way out', () => {
+		const result = resolveSpecs(['5432', 'db:5432']);
+		expect(result.ok).toBe(false);
+		expect(!result.ok && result.error).toContain('asked for twice');
+		expect(!result.ok && result.error).toContain('5433:db:5432');
+	});
+
+	it('reports the first bad token', () => {
+		expect(resolveSpecs(['5173', 'nope'])).toMatchObject({
+			ok: false,
+			error: expect.stringContaining('`nope` is not a port'),
+		});
+	});
+});
+
+describe('helper probe', () => {
+	it('prefers bash, then node, then socat', () => {
+		expect([...HELPERS]).toEqual(['bash', 'node', 'socat']);
+		expect(PROBE_SCRIPT).toContain('for h in bash node socat;');
+	});
+
+	it.runIf(hasCommand('sh'))(
+		'the probe script really finds a helper here',
+		() => {
+			const run = spawnSync('sh', ['-c', PROBE_SCRIPT]);
+			expect(interpretProbe(run.status ?? -1, String(run.stdout), '')).toEqual({
+				outcome: 'found',
+				helper: HELPERS.find((h) => hasCommand(h)),
+			});
+		},
+	);
+
+	it('tells "none installed" apart from a failed check', () => {
+		expect(interpretProbe(0, 'bash\n', '')).toEqual({
+			outcome: 'found',
+			helper: 'bash',
+		});
+		expect(interpretProbe(1, '', '')).toEqual({ outcome: 'none' });
+		expect(
+			interpretProbe(
+				1,
+				'',
+				'Error response from daemon: container x is not running',
+			),
+		).toMatchObject({ outcome: 'failed' });
+		expect(interpretProbe(126, '', 'exec failed: sh: not found')).toEqual({
+			outcome: 'failed',
+			message: 'exec failed: sh: not found',
+		});
+		expect(interpretProbe(0, 'zsh\n', '')).toMatchObject({ outcome: 'failed' });
+	});
+});
+
+describe('extractForwardPorts', () => {
+	it('reads the merged list, falling back to the plain configuration', () => {
+		expect(
+			extractForwardPorts(
+				'noise\n{"configuration":{"forwardPorts":[1]},"mergedConfiguration":{"forwardPorts":[5173,"db:5432"]}}\n',
+			),
+		).toEqual(['5173', 'db:5432']);
+		expect(
+			extractForwardPorts('{"configuration":{"forwardPorts":[8000]}}'),
+		).toEqual(['8000']);
+	});
+
+	it('returns [] when there are none and null when the output is not JSON', () => {
+		expect(extractForwardPorts('{"configuration":{}}')).toEqual([]);
+		expect(extractForwardPorts('error: something')).toBeNull();
+		expect(extractForwardPorts('{broken')).toBeNull();
+	});
+});
+
+describe('startForwarding under failure and load', () => {
+	it('survives a bridge that cannot be spawned', async () => {
+		const events: ForwardEvent[] = [];
+		const hostPort = await freePort();
+		const f = await startForwarding({
+			specs: [{ hostPort, targetHost: '127.0.0.1', targetPort: 1 }],
+			openBridge: async () => spawnBridge('/nonexistent/bring-bridge', []),
+			onEvent: (e) => events.push(e),
+		});
+		open.push(f);
+		for (let i = 0; i < 3; i++) {
+			await fetch(`http://127.0.0.1:${hostPort}/`).catch(() => undefined);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		expect(events.filter((e) => e.type === 'connection-failed')).toHaveLength(
+			3,
+		);
+		expect(f.listening).toHaveLength(1);
+	});
+
+	it('never runs more bridges at once than the cap, and still serves everyone', async () => {
+		const target = await httpServer('ok');
+		const hostPort = await freePort();
+		let alive = 0;
+		let peak = 0;
+		const f = await startForwarding({
+			specs: [{ hostPort, targetHost: '127.0.0.1', targetPort: target }],
+			openBridge: async (spec) => {
+				const [cmd, ...args] = bridgeArgv(
+					'node',
+					spec.targetHost,
+					spec.targetPort,
+				);
+				const child = spawnBridge(cmd as string, args);
+				alive++;
+				peak = Math.max(peak, alive);
+				child.on('close', () => {
+					alive--;
+				});
+				return child;
+			},
+			onEvent: () => {},
+			maxBridges: 2,
+			bridgeGraceMs: 300,
+		});
+		open.push(f);
+		const bodies = await Promise.all(
+			Array.from({ length: 8 }, async () => {
+				const res = await fetch(`http://127.0.0.1:${hostPort}/`, {
+					headers: { connection: 'close' },
+				});
+				return res.text();
+			}),
+		);
+		expect(bodies).toEqual(Array(8).fill('ok'));
+		expect(peak).toBeLessThanOrEqual(2);
 	});
 });
